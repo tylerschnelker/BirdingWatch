@@ -6,34 +6,12 @@ A full-stack, production-deployed bird detection system that continuously record
 
 ## Architecture
 
-
-┌────────────────────┐
-│ Raspberry Pi │
-│ (Audio Recorder) │
-│ - recorder.py │
-│ - USB Microphone │
-│ - Sends audio via │
-│ HTTPS + API key │
-└──────────┬─────────┘
-           │
-           ▼
-    Public Internet (API Key Auth)
-           │
-           ▼
-┌────────────────────────────────────┐
-│ DigitalOcean Ubuntu Droplet │
-│ (Backend + Analysis + Database) │
-│ │
-│ - FastAPI │
-│ - BirdNET-Analyzer │
-│ - SQLite │
-│ - Systemd Service │
-│ - Web UI (HTML/CSS/JS) │
-└────────────────────────────────────┘
-│
-▼
-Web Dashboard
-http://143.198.232.142:8000/
+```mermaid
+graph TD
+    A[Raspberry Pi<br/>Audio Recorder<br/>recorder.py<br/>USB Microphone<br/>HTTPS + API Key] -->|API Key Auth| B[Public Internet]
+    B --> C[DigitalOcean Ubuntu Droplet<br/>Backend + Analysis + Database<br/>FastAPI<br/>BirdNET-Analyzer<br/>SQLite<br/>Systemd Service<br/>Web UI HTML/CSS/JS]
+    C --> D[Web Dashboard<br/>http://143.198.232.142:8000/]
+```
 
 
 ---
