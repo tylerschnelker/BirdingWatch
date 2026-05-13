@@ -195,12 +195,12 @@ def monitor_and_record():
 
 
 def main():
-    """
-    Main entry point with retry loop to prevent permanent crashes.
-    """
     while True:
         try:
             monitor_and_record()
+        except KeyboardInterrupt:
+            print("\nStopping BirdWatch. Goodbye!")
+            sys.exit(0)
         except Exception as e:
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Fatal error: {e}")
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Restarting in 5 seconds...")
