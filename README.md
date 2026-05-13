@@ -86,31 +86,32 @@ No manual deployment steps are required.
 
 ## Project Structure
 
+```
+pi/
+├── recorder.py
+├── config.py
+└── requirements.txt
 
-├── pi/
-│   ├── recorder.py
-│   ├── config.py
-│   └── requirements.txt
-│
-├── server/
-│   ├── main.py
-│   ├── analyzer.py
-│   ├── database.py
-│   ├── config.py
-│   ├── uploads/
-│   ├── static/
-│   └── requirements.txt
-│
-├── web/
-│   ├── index.html
-│   ├── style.css
-│   └── app.js
-│
-├── .github/workflows/
-│   └── deploy.yml
-│
-├── .gitignore
-└── README.md
+server/
+├── main.py
+├── analyzer.py
+├── database.py
+├── config.py
+├── uploads/
+├── static/
+└── requirements.txt
+
+web/
+├── index.html
+├── style.css
+└── app.js
+
+.github/workflows/
+└── deploy.yml
+
+.gitignore
+README.md
+```
 
 
 ---
