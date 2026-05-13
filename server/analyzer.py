@@ -28,7 +28,7 @@ def analyze_audio(filepath: str) -> List[Dict]:
         # Import birdnetlib here to handle cases where it's not installed
         from birdnetlib import Recording
         from birdnetlib.analyzer import Analyzer
-        
+
         analyzer = Analyzer()
 
         
@@ -38,12 +38,6 @@ def analyze_audio(filepath: str) -> List[Dict]:
             lat=LAT if LAT is not None else 0,
             lon=LON if LON is not None else 0,
             min_conf=BIRDNET_CONFIDENCE_THRESHOLD
-        )
-        
-        # Load the audio file
-        recording = Recording(
-            filepath,
-            analyzer=analyzer
         )
         
         # Run the analysis
