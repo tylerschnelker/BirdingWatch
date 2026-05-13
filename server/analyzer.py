@@ -29,17 +29,16 @@ def analyze_audio(filepath: str) -> List[Dict]:
         from birdnetlib import Recording
         from birdnetlib.analyzer import Analyzer
         
-        # Initialize the analyzer with configuration
-        analyzer_config = {
-            'confidence_threshold': BIRDNET_CONFIDENCE_THRESHOLD,
-        }
+        analyzer = Analyzer()
+
         
-        # Add location if provided
-        if LAT is not None and LON is not None:
-            analyzer_config['lat'] = LAT
-            analyzer_config['lon'] = LON
-        
-        analyzer = Analyzer(**analyzer_config)
+        recording = Recording(
+            filepath,
+            analyzer=analyzer,
+            lat=LAT if LAT is not None else 0,
+            lon=LON if LON is not None else 0,
+            min_conf=BIRDNET_CONFIDENCE_THRESHOLD
+        )
         
         # Load the audio file
         recording = Recording(
