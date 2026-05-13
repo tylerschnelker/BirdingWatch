@@ -62,6 +62,13 @@ async def upload_audio(file: UploadFile = File(...)):
         
         # Process each detection
         for detection in detections:
+            if len(detections) == 0:
+                os.remove(filepath)
+                print(f"No birds detected, deleted {filename}")
+                return JSONResponse({
+                    "status": "ok",
+                    "detections_found": 0
+            })
             # Fetch additional bird info from Wikipedia
             bird_info = fetch_bird_info(detection['species_common'])
             
