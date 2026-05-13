@@ -100,7 +100,8 @@ def monitor_and_record():
                 samplerate=SAMPLE_RATE,
                 channels=CHANNELS,
                 dtype=np.float32,
-                blocking=True
+                blocking=True,
+                device=2
             )
             
             # Calculate RMS (loudness)
