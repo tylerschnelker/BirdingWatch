@@ -1,0 +1,32 @@
+name: Deploy BirdWatch
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Pi
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PI_HOST }}
+          username: ${{ secrets.PI_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd /home/pi/BirdingWatch
+            git pull
+            sudo systemctl restart birdwatch-recorder
+
+      - name: Deploy to Cloud
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.CLOUD_HOST }}
+          username: ${{ secrets.CLOUD_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd /root/BirdingWatch/server
+            git pull
+            sudo systemctl restart birdwatch
