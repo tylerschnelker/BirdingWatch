@@ -103,6 +103,7 @@ def monitor_and_record():
                 blocking=True,
                 device=0
             )
+            sd.wait()
             
             # Calculate RMS (loudness)
             rms = calculate_rms(audio_chunk)
