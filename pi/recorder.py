@@ -14,7 +14,6 @@ from pathlib import Path
 import sys
 from config import API_KEY
 
-
 # Import configuration
 from config import (
     DESKTOP_SERVER_URL,
