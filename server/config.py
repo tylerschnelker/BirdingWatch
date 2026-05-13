@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+API_KEY = os.getenv("API_KEY")
+
 # Directory for uploaded audio files
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "uploads"))
 

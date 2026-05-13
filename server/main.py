@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
 from datetime import datetime
+from fastapi import Header
 import uuid
 
 from config import UPLOAD_DIR, DATABASE_PATH, HOST, PORT
@@ -36,7 +37,9 @@ async def startup_event():
 
 
 @app.post("/upload-audio")
-async def upload_audio(file: UploadFile = File(...)):
+async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(None)):
+    if x_api_key != API_KEY:
+        return JSONResponse({"status": "error", "message": "Unauthorized"}, status_code=401)
     """
     Receive audio file from Raspberry Pi, analyze with BirdNET,
     and store detections in database.

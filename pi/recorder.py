@@ -12,6 +12,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 import sys
+from config import API_KEY
+
 
 # Import configuration
 from config import (
@@ -61,7 +63,7 @@ def upload_audio(filepath):
     try:
         with open(filepath, 'rb') as f:
             files = {'file': (os.path.basename(filepath), f, 'audio/wav')}
-            response = requests.post(upload_url, files=files, timeout=30)
+            response = requests.post(upload_url, files=files, timeout=30, headers={"x-api-key": API_KEY})
         
         if response.status_code == 200:
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Upload successful: {filepath.name}")

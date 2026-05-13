@@ -13,6 +13,8 @@ load_dotenv()
 # Example: "http://192.168.1.100:8000"
 DESKTOP_SERVER_URL = os.getenv("DESKTOP_SERVER_URL", "http://<DESKTOP_LOCAL_IP>:8000")
 
+API_KEY = os.getenv("API_KEY")
+
 # Audio recording settings
 SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "44100"))
 CHANNELS = int(os.getenv("CHANNELS", "1"))
