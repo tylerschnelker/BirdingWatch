@@ -23,8 +23,6 @@ wheels/
 # Virtual environments
 venv/
 .venv/
-ENV/
-env/
 
 # Database
 *.db

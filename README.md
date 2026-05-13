@@ -53,11 +53,24 @@ birdwatch/
 │   ├── index.html       # Main web UI
 │   ├── style.css        # Styling
 │   └── app.js           # Frontend logic
+├── .env.example         # Example environment variables
 ├── .gitignore
 └── README.md
 ```
 
 ## Setup Instructions
+
+### 1. Configure Environment Variables
+
+Copy the example environment file and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set:
+- `DESKTOP_SERVER_URL`: Your desktop's local IP (e.g., `http://192.168.1.100:8000`)
+- `LAT` and `LON`: Your coordinates for better BirdNET accuracy (optional)
 
 ### Desktop Server Setup
 
@@ -67,14 +80,7 @@ birdwatch/
    pip install -r requirements.txt
    ```
 
-2. **Configure location (optional):**
-   Edit `server/config.py` and fill in your latitude and longitude for better BirdNET accuracy:
-   ```python
-   LAT = 40.7128  # Your latitude
-   LON = -74.0060 # Your longitude
-   ```
-
-3. **Run the server:**
+2. **Run the server:**
    ```bash
    cd server
    uvicorn main:app --reload --host 0.0.0.0 --port 8000
@@ -90,15 +96,7 @@ birdwatch/
    pip install -r requirements.txt
    ```
 
-2. **Configure server URL:**
-   Edit `pi/config.py` and replace `<DESKTOP_LOCAL_IP>` with your desktop's local IP address:
-   ```python
-   DESKTOP_SERVER_URL = "http://192.168.1.100:8000"  # Replace with your IP
-   ```
-
-   To find your desktop's local IP:
-   - Windows: Run `ipconfig` and look for IPv4 Address
-   - Mac/Linux: Run `ifconfig` or `ip addr`
+2. **Copy the .env file** from your desktop to the Pi, or create it manually with the same values.
 
 3. **Connect USB microphone:**
    Ensure your USB microphone is connected and recognized by the Pi.
@@ -136,9 +134,10 @@ To access the BirdWatch web UI from outside your home network (e.g., on your pho
 ## Troubleshooting
 
 - **No detections**: Check that the Pi can reach the server (ping test)
-- **Upload failures**: Verify the DESKTOP_SERVER_URL in pi/config.py is correct
+- **Upload failures**: Verify the DESKTOP_SERVER_URL in .env is correct
 - **BirdNET errors**: Ensure birdnetlib is installed on the server
 - **Audio issues**: Check microphone permissions and device selection
+- **Config not loading**: Ensure .env file exists in the project root
 
 ## License
 

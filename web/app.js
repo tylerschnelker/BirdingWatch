@@ -41,7 +41,12 @@ function createBirdImage(imageUrl, size = 'large') {
     img.className = size === 'large' ? 'bird-photo' : 'species-thumbnail';
     
     if (imageUrl) {
-        img.innerHTML = `<img src="${imageUrl}" alt="Bird" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" onerror="this.parentElement.innerHTML='${BIRD_SILHOUETT}'">`;
+        const imgEl = document.createElement('img');
+        imgEl.src = imageUrl;
+        imgEl.alt = 'Bird';
+        imgEl.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:8px;';
+        imgEl.onerror = function() { this.parentElement.innerHTML = BIRD_SILHOUETTE; };
+        img.appendChild(imgEl);    
     } else {
         img.className += ' placeholder';
         img.innerHTML = BIRD_SILHOUETTE;
@@ -54,6 +59,7 @@ function createBirdImage(imageUrl, size = 'large') {
 function renderDetectionCard(detection) {
     const card = document.createElement('div');
     card.className = 'detection-card';
+    card.dataset.id = detection.id;
     
     const confidencePercent = Math.round(detection.confidence * 100);
     const formattedDate = formatDate(detection.detected_at);
@@ -79,8 +85,9 @@ function renderDetectionCard(detection) {
             </div>
             <button class="expand-button" onclick="toggleSummary(${detection.id})">Read more</button>
         ` : ''}
-        <div class="audio-player">
+        <div class="audio-player-container">
             <audio controls src="/api/audio/${detection.audio_filename}"></audio>
+            <button class="delete-button" onclick="deleteDetection(${detection.id})" title="Delete detection">🗑️</button>
         </div>
     `;
     
@@ -98,6 +105,39 @@ function toggleSummary(id) {
     } else {
         summary.classList.add('collapsed');
         button.textContent = 'Read more';
+    }
+}
+
+// Delete a detection
+async function deleteDetection(detectionId) {
+    if (!confirm('Are you sure you want to delete this detection?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/detections/${detectionId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            // Remove the card from the DOM
+            const card = document.querySelector(`.detection-card[data-id="${detectionId}"]`);
+            if (card) {
+                card.style.opacity = '0';
+                card.style.transform = 'scale(0.9)';
+                setTimeout(() => card.remove(), 300);
+            }
+            // Refresh the species list if it's visible
+            const speciesTab = document.querySelector('.tab-button[data-tab="species"]');
+            if (speciesTab.classList.contains('active')) {
+                loadSpecies();
+            }
+        } else {
+            alert('Failed to delete detection');
+        }
+    } catch (error) {
+        console.error('Error deleting detection:', error);
+        alert('Error deleting detection');
     }
 }
 

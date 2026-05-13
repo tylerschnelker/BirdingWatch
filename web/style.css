@@ -149,7 +149,7 @@ main {
     border-radius: 12px;
     padding: 1.25rem;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.3s ease;
 }
 
 .detection-card:hover {
@@ -252,13 +252,39 @@ main {
     text-decoration: underline;
 }
 
-.audio-player {
-    margin-top: 0.75rem;
+.delete-button {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    opacity: 0.6;
+    line-height: 1;
+    color: #e22612;
 }
 
-.audio-player audio {
-    width: 100%;
+.delete-button:hover {
+    opacity: 1;
+    background-color: #ffebee;
+    transform: scale(1.1);
+}
+
+.audio-player-container {
+    margin-top: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.audio-player-container audio {
+    flex: 1;
     height: 40px;
+}
+
+.audio-player-container .delete-button {
+    flex-shrink: 0;
 }
 
 /* Species list */
