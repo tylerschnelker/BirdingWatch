@@ -12,7 +12,7 @@ from datetime import datetime
 from fastapi import Header
 import uuid
 
-from config import UPLOAD_DIR, DATABASE_PATH, HOST, PORT
+from config import UPLOAD_DIR, DATABASE_PATH, HOST, PORT, API_KEY
 from database import init_db, insert_detection, get_recent_detections, get_species_summary, get_detection_by_id, delete_detection
 from analyzer import analyze_audio, fetch_bird_info
 
