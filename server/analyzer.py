@@ -33,7 +33,7 @@ def analyze_audio(filepath: str) -> List[Dict]:
 
         
         recording = Recording(
-            filepath,
+            path=filepath,
             analyzer=analyzer,
             lat=LAT if LAT is not None else 0,
             lon=LON if LON is not None else 0,
@@ -82,7 +82,9 @@ def fetch_bird_info(species_common: str) -> Dict[str, Optional[str]]:
     try:
         # Call Wikipedia REST API
         url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{species_common}"
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=10, headers={
+            "User-Agent": "BirdWatch/1.0 (backyard bird tracker; tylerschnelker@yahoo.com)"
+        })
         
         if response.status_code == 200:
             data = response.json()

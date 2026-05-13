@@ -159,3 +159,27 @@ def get_detection_by_id(detection_id: int) -> Optional[Dict]:
     if row:
         return dict(row)
     return None
+
+
+def delete_detection(detection_id: int) -> bool:
+    """
+    Delete a detection by its ID.
+    
+    Args:
+        detection_id: The ID of the detection to delete
+    
+    Returns:
+        True if deleted, False if not found
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        DELETE FROM detections WHERE id = ?
+    """, (detection_id,))
+    
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    
+    return deleted

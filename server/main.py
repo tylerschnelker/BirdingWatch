@@ -12,7 +12,7 @@ from datetime import datetime
 import uuid
 
 from config import UPLOAD_DIR, DATABASE_PATH, HOST, PORT
-from database import init_db, insert_detection, get_recent_detections, get_species_summary, get_detection_by_id
+from database import init_db, insert_detection, get_recent_detections, get_species_summary, get_detection_by_id, delete_detection
 from analyzer import analyze_audio, fetch_bird_info
 
 # Initialize FastAPI app
@@ -144,6 +144,25 @@ async def get_detection(detection_id: int):
         }, status_code=404)
     
     return JSONResponse(detection)
+
+
+@app.delete("/api/detections/{detection_id}")
+async def delete_detection_endpoint(detection_id: int):
+    """
+    Delete a detection by ID.
+    """
+    deleted = delete_detection(detection_id)
+    
+    if not deleted:
+        return JSONResponse({
+            "status": "error",
+            "message": "Detection not found"
+        }, status_code=404)
+    
+    return JSONResponse({
+        "status": "ok",
+        "message": "Detection deleted"
+    })
 
 
 # Mount static files (web UI)
