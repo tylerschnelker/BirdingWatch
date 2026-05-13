@@ -188,7 +188,7 @@ def monitor_and_record():
                     silence_counter = 0
     
     except KeyboardInterrupt:
-        print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Stopping monitoring (Ctrl+C)")
+        raise
     except Exception as e:
         print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error in monitoring loop: {e}")
         raise
