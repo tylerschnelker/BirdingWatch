@@ -5,22 +5,21 @@ on:
     branches: [ "main" ]
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
 
+  deploy-pi:
+    runs-on: self-hosted
     steps:
-      - name: Deploy to Pi
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.PI_HOST }}
-          username: ${{ secrets.PI_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            cd /home/pi/BirdingWatch
-            git pull
-            sudo systemctl restart birdwatch-recorder
+      - name: Update Pi recorder
+        run: |
+          cd /home/pi/BirdingWatch
+          git pull
+          sudo systemctl restart birdwatch-recorder
 
-      - name: Deploy to Cloud
+
+  deploy-cloud:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy cloud server
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.CLOUD_HOST }}
