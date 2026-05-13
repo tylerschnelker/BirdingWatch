@@ -1,144 +1,208 @@
 # BirdWatch
 
-A full-stack bird identification application that automatically detects and identifies bird species from audio recordings in your backyard.
+A full-stack, production-deployed bird detection system that continuously records backyard audio using a Raspberry Pi and performs cloud-based species identification using BirdNET. The system includes a web dashboard, automated deployment via CI/CD, and runs on a single DigitalOcean Ubuntu server.
 
-## Overview
-
-BirdWatch uses a Raspberry Pi with a USB microphone to continuously monitor for bird calls. When a bird is detected, the audio clip is sent to a desktop server running BirdNET-Analyzer (Cornell Lab's bird identification library) for species identification. Results are stored in SQLite and served through a beautiful, mobile-friendly web UI that you can access from anywhere.
+---
 
 ## Architecture
 
-```
-┌─────────────────┐         WiFi          ┌─────────────────┐
-│  Raspberry Pi   │ ◄────────────────────► │  Desktop Server │
-│  + USB Mic      │                         │  (FastAPI)      │
-│  - recorder.py  │                         │  - BirdNET     │
-│  - config.py    │                         │  - SQLite DB   │
-└─────────────────┘                         └─────────────────┘
-                                                    │
-                                                    │
-                                                    ▼
-                                            ┌─────────────────┐
-                                            │  Web UI         │
-                                            │  (HTML/CSS/JS)  │
-                                            │  - Mobile view  │
-                                            └─────────────────┘
-```
+
+┌────────────────────┐
+│ Raspberry Pi │
+│ (Audio Recorder) │
+│ - recorder.py │
+│ - USB Microphone │
+│ - Sends audio via │
+│ HTTPS + API key │
+└──────────┬─────────┘
+           │
+           ▼
+    Public Internet (API Key Auth)
+           │
+           ▼
+┌────────────────────────────────────┐
+│ DigitalOcean Ubuntu Droplet │
+│ (Backend + Analysis + Database) │
+│ │
+│ - FastAPI │
+│ - BirdNET-Analyzer │
+│ - SQLite │
+│ - Systemd Service │
+│ - Web UI (HTML/CSS/JS) │
+└────────────────────────────────────┘
+│
+▼
+Web Dashboard
+http://143.198.232.142:8000/
+
+
+---
+
+## Live Deployment
+
+The application is deployed on a single **DigitalOcean Ubuntu server**.
+
+**Web Interface:**
+
+
+http://143.198.232.142:8000/
+
+
+The Raspberry Pi records audio locally and uploads detected clips to the server via a secure API key.
+
+---
+
+## CI/CD Pipeline
+
+This project uses **GitHub Actions** for automated deployment.
+
+On every push to the `main` branch:
+
+- The Raspberry Pi runner:
+  - Pulls latest code
+  - Restarts the recorder service
+- The DigitalOcean server:
+  - Pulls latest backend changes
+  - Restarts the FastAPI service
+
+Deployment is fully automated using:
+- Self-hosted GitHub Actions runner (on the Pi)
+- SSH-based deployment to DigitalOcean
+
+No manual deployment steps are required.
+
+---
 
 ## Tech Stack
 
-- **Pi**: Python 3, sounddevice, requests, numpy
-- **Desktop Server**: Python 3, FastAPI, BirdNET-Analyzer, SQLite, uvicorn, aiofiles
-- **Frontend**: Vanilla HTML/CSS/JS (no frameworks, no build step)
-- **Database**: SQLite (single file)
+### Raspberry Pi
+- Python 3
+- sounddevice
+- requests
+- numpy
+- Systemd service
+- Self-hosted GitHub Actions runner
+
+### Cloud Server (DigitalOcean Ubuntu)
+- FastAPI
+- Uvicorn
+- BirdNET-Analyzer (Cornell Lab)
+- SQLite
+- aiofiles
+- Systemd service
+
+### Frontend
+- Vanilla HTML
+- CSS
+- JavaScript
+- No frameworks
+- No build step
+
+### DevOps
+- GitHub Actions CI/CD
+- Systemd service management
+- Public API authentication
+- Ubuntu production deployment
+
+---
 
 ## Project Structure
 
-```
-birdwatch/
+
 ├── pi/
-│   ├── recorder.py      # Audio monitoring and upload loop
-│   ├── config.py        # Pi configuration
-│   └── requirements.txt # Pi dependencies
+│   ├── recorder.py
+│   ├── config.py
+│   └── requirements.txt
+│
 ├── server/
-│   ├── main.py          # FastAPI application
-│   ├── analyzer.py      # BirdNET integration
-│   ├── database.py      # SQLite operations
-│   ├── models.py        # Data models
-│   ├── config.py        # Server configuration
-│   ├── uploads/         # Audio file storage
-│   ├── static/          # Static files
-│   └── requirements.txt # Server dependencies
+│   ├── main.py
+│   ├── analyzer.py
+│   ├── database.py
+│   ├── config.py
+│   ├── uploads/
+│   ├── static/
+│   └── requirements.txt
+│
 ├── web/
-│   ├── index.html       # Main web UI
-│   ├── style.css        # Styling
-│   └── app.js           # Frontend logic
-├── .env.example         # Example environment variables
+│   ├── index.html
+│   ├── style.css
+│   └── app.js
+│
+├── .github/workflows/
+│   └── deploy.yml
+│
 ├── .gitignore
 └── README.md
-```
 
-## Setup Instructions
 
-### 1. Configure Environment Variables
+---
 
-Copy the example environment file and fill in your values:
+## Setup Overview
 
-```bash
-cp .env.example .env
-```
+### Environment Variables
 
-Edit `.env` and set:
-- `DESKTOP_SERVER_URL`: Your desktop's local IP (e.g., `http://192.168.1.100:8000`)
-- `LAT` and `LON`: Your coordinates for better BirdNET accuracy (optional)
+**Raspberry Pi:**
 
-### Desktop Server Setup
 
-1. **Install Python dependencies:**
-   ```bash
-   cd server
-   pip install -r requirements.txt
-   ```
+DESKTOP_SERVER_URL=http://143.198.232.142:8000
 
-2. **Run the server:**
-   ```bash
-   cd server
-   uvicorn main:app --reload --host 0.0.0.0 --port 8000
-   ```
+API_KEY=your_secure_key
+LAT=optional
+LON=optional
 
-   The server will start on `http://localhost:8000` and the web UI will be available at `http://localhost:8000`
 
-### Raspberry Pi Setup
+The server uses its own `.env` configuration.
 
-1. **Install Python dependencies:**
-   ```bash
-   cd pi
-   pip install -r requirements.txt
-   ```
+---
 
-2. **Copy the .env file** from your desktop to the Pi, or create it manually with the same values.
+## Running the System
 
-3. **Connect USB microphone:**
-   Ensure your USB microphone is connected and recognized by the Pi.
+### Cloud Server
 
-4. **Run the recorder:**
-   ```bash
-   cd pi
-   python recorder.py
-   ```
 
-   The recorder will start monitoring audio and automatically upload bird calls to the server.
+cd server
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000
 
-## Remote Access with Tailscale
 
-To access the BirdWatch web UI from outside your home network (e.g., on your phone while away):
+In production, the server runs as a systemd service.
 
-1. **Install Tailscale** on both your desktop and your phone
-   - Download from [tailscale.com](https://tailscale.com)
-   - Sign in with the same account on both devices
+---
 
-2. **Connect both devices** to your Tailscale network
+### Raspberry Pi
 
-3. **Access the web UI** using your desktop's Tailscale IP:
-   - Find your desktop's Tailscale IP in the Tailscale admin panel
-   - Open `http://<TAILSCALE_IP>:8000` on your phone
 
-## Usage
+cd pi
+pip install -r requirements.txt
+python recorder.py
 
-- The web UI auto-refreshes every 30 seconds
-- View recent detections with audio playback
-- Browse species summary with visit counts
-- Click "Read more" to expand Wikipedia summaries
-- Missing bird photos show a silhouette placeholder
+
+In production, the recorder runs as a systemd service and deploys automatically via GitHub Actions.
+
+---
+
+## Features
+
+- Continuous audio monitoring
+- Automated bird species identification using BirdNET
+- Persistent SQLite storage
+- Mobile-friendly web dashboard
+- Audio playback in browser
+- Species statistics and summaries
+- Fully automated CI/CD deployment
+- Production cloud hosting
+
+---
 
 ## Troubleshooting
 
-- **No detections**: Check that the Pi can reach the server (ping test)
-- **Upload failures**: Verify the DESKTOP_SERVER_URL in .env is correct
-- **BirdNET errors**: Ensure birdnetlib is installed on the server
-- **Audio issues**: Check microphone permissions and device selection
-- **Config not loading**: Ensure .env file exists in the project root
+- **No detections:** Verify Pi can reach server and API key is correct.
+- **Upload failures:** Confirm `DESKTOP_SERVER_URL` and firewall settings.
+- **BirdNET errors:** Ensure dependencies are installed on the server.
+- **Service not running:** Check `systemctl status birdwatch`.
+
+---
 
 ## License
 
-This project uses BirdNET-Analyzer from the Cornell Lab of Ornithology.
+Uses BirdNET-Analyzer from the Cornell Lab of Ornithology.
