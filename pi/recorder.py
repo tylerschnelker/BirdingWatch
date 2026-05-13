@@ -95,7 +95,7 @@ def monitor_and_record():
     try:
         while True:
             # Read a chunk of audio
-            audio_chunk, overflow = sd.rec(
+            audio_chunk = sd.rec(
                 chunk_size,
                 samplerate=SAMPLE_RATE,
                 channels=CHANNELS,
