@@ -5,3 +5,6 @@ birdnetlib
 requests
 Pillow
 python-multipart
+python-dotenv
+librosa
+tensorflow
