@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🐦 BirdWatch - Your Backyard Bird Tracker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <h1>🐦 BirdWatch</h1>
+            <p class="subtitle">Your backyard bird tracker</p>
+            <div class="live-indicator">
+                <span class="live-dot"></span>
+                <span class="live-text">Live</span>
+            </div>
+        </div>
+    </header>
+
+    <nav class="tabs">
+        <button class="tab-button active" data-tab="recent">Recent Detections</button>
+        <button class="tab-button" data-tab="species">Species Summary</button>
+    </nav>
+
+    <main>
+        <section id="recent-tab" class="tab-content active">
+            <div id="detections-container" class="detections-feed">
+                <div class="loading">Loading detections...</div>
+            </div>
+        </section>
+
+        <section id="species-tab" class="tab-content">
+            <div id="species-container" class="species-list">
+                <div class="loading">Loading species data...</div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>BirdWatch - Powered by BirdNET-Analyzer</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>

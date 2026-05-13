@@ -1,0 +1,366 @@
+/* BirdWatch - Nature-themed styling */
+
+/* Reset and base styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #f5f0e8;
+    color: #2d3436;
+    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Header */
+header {
+    background: linear-gradient(135deg, #2d6a4f 0%, #40916c 100%);
+    color: white;
+    padding: 1.5rem 1rem;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.header-content {
+    max-width: 800px;
+    margin: 0 auto;
+    position: relative;
+}
+
+h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.subtitle {
+    font-size: 1rem;
+    opacity: 0.9;
+    font-weight: 400;
+}
+
+.live-indicator {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.live-dot {
+    width: 10px;
+    height: 10px;
+    background-color: #74c69d;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.5;
+        transform: scale(1.2);
+    }
+}
+
+.live-text {
+    color: #74c69d;
+}
+
+/* Tabs */
+.tabs {
+    display: flex;
+    background: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.tab-button {
+    flex: 1;
+    padding: 1rem;
+    border: none;
+    background: white;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #636e72;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-bottom: 3px solid transparent;
+}
+
+.tab-button:hover {
+    background-color: #f8f9fa;
+    color: #2d6a4f;
+}
+
+.tab-button.active {
+    color: #2d6a4f;
+    border-bottom-color: #2d6a4f;
+    background-color: #f8f9fa;
+}
+
+/* Main content */
+main {
+    flex: 1;
+    max-width: 800px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 1rem;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* Loading state */
+.loading {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #636e72;
+    font-style: italic;
+}
+
+/* Detection cards */
+.detections-feed {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.detection-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.25rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.detection-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.bird-photo {
+    width: 80px;
+    height: 80px;
+    border-radius: 8px;
+    object-fit: cover;
+    background-color: #e9ecef;
+    flex-shrink: 0;
+}
+
+.bird-photo.placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #e9ecef;
+}
+
+.bird-info {
+    flex: 1;
+}
+
+.bird-name {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #2d6a4f;
+    margin-bottom: 0.25rem;
+}
+
+.bird-scientific {
+    font-size: 0.875rem;
+    font-style: italic;
+    color: #636e72;
+    margin-bottom: 0.5rem;
+}
+
+.confidence-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    background-color: #74c69d;
+    color: white;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.card-meta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.875rem;
+    color: #636e72;
+}
+
+.detection-time {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.wiki-summary {
+    font-size: 0.875rem;
+    color: #495057;
+    line-height: 1.5;
+    margin-bottom: 0.75rem;
+}
+
+.wiki-summary.collapsed {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.expand-button {
+    background: none;
+    border: none;
+    color: #2d6a4f;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0;
+}
+
+.expand-button:hover {
+    text-decoration: underline;
+}
+
+.audio-player {
+    margin-top: 0.75rem;
+}
+
+.audio-player audio {
+    width: 100%;
+    height: 40px;
+}
+
+/* Species list */
+.species-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.species-item {
+    background: white;
+    border-radius: 10px;
+    padding: 1rem;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.species-thumbnail {
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    object-fit: cover;
+    background-color: #e9ecef;
+    flex-shrink: 0;
+}
+
+.species-thumbnail.placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #e9ecef;
+}
+
+.species-details {
+    flex: 1;
+}
+
+.species-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #2d6a4f;
+    margin-bottom: 0.25rem;
+}
+
+.species-stats {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.875rem;
+    color: #636e72;
+}
+
+.stat-item {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.visit-count {
+    font-weight: 600;
+    color: #2d6a4f;
+}
+
+/* Responsive grid for species on larger screens */
+@media (min-width: 600px) {
+    .species-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 1rem;
+    }
+}
+
+/* Footer */
+footer {
+    background-color: white;
+    padding: 1.5rem 1rem;
+    text-align: center;
+    color: #636e72;
+    font-size: 0.875rem;
+    margin-top: auto;
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #636e72;
+}
+
+.empty-state-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.empty-state-text {
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+}
+
+.empty-state-subtext {
+    font-size: 0.875rem;
+    color: #b2bec3;
+}

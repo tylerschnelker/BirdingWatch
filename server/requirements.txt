@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+aiofiles
+birdnetlib
+requests
+Pillow
+python-multipart
