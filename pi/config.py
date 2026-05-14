@@ -16,7 +16,7 @@ DESKTOP_SERVER_URL = os.getenv("DESKTOP_SERVER_URL", "http://<DESKTOP_LOCAL_IP>:
 API_KEY = os.getenv("API_KEY")
 
 # Audio recording settings
-SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "44100"))
+SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "48000"))
 CHANNELS = int(os.getenv("CHANNELS", "1"))
 SILENCE_THRESHOLD = float(os.getenv("SILENCE_THRESHOLD", "0.01"))
 MIN_RECORDING_SECONDS = int(os.getenv("MIN_RECORDING_SECONDS", "3"))
