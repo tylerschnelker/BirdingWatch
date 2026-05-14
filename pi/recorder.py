@@ -106,6 +106,10 @@ def monitor_and_record():
             )
             sd.wait()
             
+            # Convert stereo to mono by averaging channels
+            if audio_chunk.ndim == 2:
+                audio_chunk = audio_chunk.mean(axis=1, keepdims=True)
+            
             # Calculate RMS (loudness)
             rms = calculate_rms(audio_chunk)
             
