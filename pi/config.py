@@ -17,7 +17,7 @@ API_KEY = os.getenv("API_KEY")
 
 # Audio recording settings
 SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "44100"))
-CHANNELS = int(os.getenv("CHANNELS", "2"))
+CHANNELS = int(os.getenv("CHANNELS", "1"))
 SILENCE_THRESHOLD = float(os.getenv("SILENCE_THRESHOLD", "0.01"))
 MIN_RECORDING_SECONDS = int(os.getenv("MIN_RECORDING_SECONDS", "3"))
 MAX_RECORDING_SECONDS = int(os.getenv("MAX_RECORDING_SECONDS", "15"))
