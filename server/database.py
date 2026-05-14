@@ -22,6 +22,9 @@ def init_db():
     """
     Initialize the database by creating the detections table if it doesn't exist.
     Should be called on server startup.
+    
+    NOTE: If schema changes, the existing birdwatch.db file must be deleted
+    to recreate the table with the new schema.
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -33,7 +36,9 @@ def init_db():
             species_scientific TEXT NOT NULL,
             confidence REAL NOT NULL,
             audio_filename TEXT NOT NULL,
-            detected_at TEXT NOT NULL,
+            first_detected_at TEXT NOT NULL,
+            last_detected_at TEXT NOT NULL,
+            detection_count INTEGER DEFAULT 1,
             image_url TEXT,
             wiki_summary TEXT
         )
@@ -44,13 +49,14 @@ def init_db():
     print(f"Database initialized at {DATABASE_PATH}")
 
 
-def insert_detection(detection: Dict) -> int:
+def insert_session(detection: Dict) -> int:
     """
-    Insert a new detection into the database.
+    Insert a new session into the database.
     
     Args:
         detection: Dictionary with keys: species_common, species_scientific,
-                   confidence, audio_filename, detected_at, image_url, wiki_summary
+                   confidence, audio_filename, first_detected_at, last_detected_at,
+                   image_url, wiki_summary
     
     Returns:
         The ID of the newly inserted row
@@ -61,14 +67,16 @@ def insert_detection(detection: Dict) -> int:
     cursor.execute("""
         INSERT INTO detections (
             species_common, species_scientific, confidence, 
-            audio_filename, detected_at, image_url, wiki_summary
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            audio_filename, first_detected_at, last_detected_at, 
+            detection_count, image_url, wiki_summary
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
     """, (
         detection['species_common'],
         detection['species_scientific'],
         detection['confidence'],
         detection['audio_filename'],
-        detection['detected_at'],
+        detection['first_detected_at'],
+        detection['last_detected_at'],
         detection.get('image_url'),
         detection.get('wiki_summary')
     ))
@@ -82,13 +90,13 @@ def insert_detection(detection: Dict) -> int:
 
 def get_recent_detections(limit: int = 50) -> List[Dict]:
     """
-    Get the most recent detections, ordered by detection time (newest first).
+    Get the most recent sessions, ordered by last detection time (newest first).
     
     Args:
-        limit: Maximum number of detections to return
+        limit: Maximum number of sessions to return
     
     Returns:
-        List of detection dictionaries
+        List of session dictionaries
     """
     conn = get_connection()
     conn.row_factory = sqlite3.Row  # Enable column access by name
@@ -96,7 +104,7 @@ def get_recent_detections(limit: int = 50) -> List[Dict]:
     
     cursor.execute("""
         SELECT * FROM detections
-        ORDER BY detected_at DESC
+        ORDER BY last_detected_at DESC
         LIMIT ?
     """, (limit,))
     
@@ -109,10 +117,12 @@ def get_recent_detections(limit: int = 50) -> List[Dict]:
 def get_species_summary() -> List[Dict]:
     """
     Get a summary of all detected species, grouped by species.
-    Includes count, last seen date, and image URL.
+    Includes total sessions (visits), average detections per session,
+    longest session duration, last seen date, and image URL.
     
     Returns:
-        List of dictionaries with keys: species_common, count, last_seen, image_url
+        List of dictionaries with keys: species_common, total_sessions,
+        avg_detections, max_duration_minutes, last_seen, image_url
     """
     conn = get_connection()
     conn.row_factory = sqlite3.Row
@@ -121,12 +131,19 @@ def get_species_summary() -> List[Dict]:
     cursor.execute("""
         SELECT 
             species_common,
-            COUNT(*) as count,
-            MAX(detected_at) as last_seen,
+            COUNT(*) as total_sessions,
+            AVG(detection_count) as avg_detections,
+            MAX(
+                CAST(
+                    (julianday(last_detected_at) - julianday(first_detected_at)) * 24 * 60
+                    AS REAL
+                )
+            ) as max_duration_minutes,
+            MAX(last_detected_at) as last_seen,
             MAX(image_url) as image_url
         FROM detections
         GROUP BY species_common
-        ORDER BY count DESC
+        ORDER BY total_sessions DESC
     """)
     
     rows = cursor.fetchall()
@@ -183,3 +200,72 @@ def delete_detection(detection_id: int) -> bool:
     conn.close()
     
     return deleted
+
+
+def find_active_session(species_common: str, timeout_minutes: int) -> Optional[Dict]:
+    """
+    Find an active session for a species within the timeout window.
+    
+    A session is considered active if its last_detected_at is within
+    timeout_minutes of the current time.
+    
+    Args:
+        species_common: The common name of the species
+        timeout_minutes: Minutes to look back for an active session
+    
+    Returns:
+        Session dictionary if found, None otherwise
+    """
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    # Calculate the cutoff time
+    cursor.execute("""
+        SELECT datetime('now', '-' || ? || ' minutes') as cutoff
+    """, (timeout_minutes,))
+    cutoff = cursor.fetchone()['cutoff']
+    
+    # Look for a session within the timeout window
+    cursor.execute("""
+        SELECT * FROM detections
+        WHERE species_common = ? AND last_detected_at > ?
+        ORDER BY last_detected_at DESC
+        LIMIT 1
+    """, (species_common, cutoff))
+    
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        return dict(row)
+    return None
+
+
+def update_session(session_id: int, confidence: float, last_detected_at: str) -> None:
+    """
+    Update an existing session with new detection information.
+    
+    Increments detection_count by 1, updates last_detected_at,
+    and updates confidence if the new confidence is higher.
+    
+    Args:
+        session_id: The ID of the session to update
+        confidence: The confidence of the new detection
+        last_detected_at: ISO format timestamp of the new detection
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Update session: increment count, update last_detected_at,
+    # and update confidence only if new confidence is higher
+    cursor.execute("""
+        UPDATE detections
+        SET detection_count = detection_count + 1,
+            last_detected_at = ?,
+            confidence = CASE WHEN ? > confidence THEN ? ELSE confidence END
+        WHERE id = ?
+    """, (last_detected_at, confidence, confidence, session_id))
+    
+    conn.commit()
+    conn.close()

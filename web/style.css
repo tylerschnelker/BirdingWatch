@@ -206,6 +206,17 @@ main {
     border-radius: 20px;
     font-size: 0.75rem;
     font-weight: 600;
+    margin-right: 0.5rem;
+}
+
+.detection-count-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    background-color: #40916c;
+    color: white;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
 }
 
 .card-meta {
@@ -215,9 +226,16 @@ main {
     margin-bottom: 0.75rem;
     font-size: 0.875rem;
     color: #636e72;
+    flex-wrap: wrap;
 }
 
 .detection-time {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.detection-duration {
     display: flex;
     align-items: center;
     gap: 0.25rem;
@@ -336,6 +354,7 @@ main {
     gap: 1rem;
     font-size: 0.875rem;
     color: #636e72;
+    flex-wrap: wrap;
 }
 
 .stat-item {

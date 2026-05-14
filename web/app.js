@@ -30,6 +30,24 @@ function formatDate(dateString) {
     return `${datePrefix} at ${timeStr}`;
 }
 
+// Calculate duration in minutes between two ISO date strings
+function calculateDurationMinutes(firstDetectedAt, lastDetectedAt) {
+    const first = new Date(firstDetectedAt);
+    const last = new Date(lastDetectedAt);
+    const diffMs = last.getTime() - first.getTime();
+    return Math.round(diffMs / (1000 * 60));
+}
+
+// Format duration as human-readable string
+function formatDuration(minutes) {
+    if (minutes < 1) return 'Just detected';
+    if (minutes < 60) return `Visited for ${minutes} minute${minutes !== 1 ? 's' : ''}`;
+    const hours = Math.floor(minutes / 60);
+    const remainingMins = minutes % 60;
+    if (remainingMins === 0) return `Visited for ${hours} hour${hours !== 1 ? 's' : ''}`;
+    return `Visited for ${hours}h ${remainingMins}m`;
+}
+
 // Create bird image element with fallback to silhouette
 function createBirdImage(imageUrl, size = 'large') {
     const img = document.createElement('div');
@@ -62,7 +80,27 @@ function renderDetectionCard(detection) {
     card.dataset.id = detection.id;
     
     const confidencePercent = Math.round(detection.confidence * 100);
-    const formattedDate = formatDate(detection.detected_at);
+    const formattedFirstDate = formatDate(detection.first_detected_at);
+    const formattedLastDate = formatDate(detection.last_detected_at);
+    const durationMinutes = calculateDurationMinutes(detection.first_detected_at, detection.last_detected_at);
+    const durationText = formatDuration(durationMinutes);
+    
+    // Build time info based on duration
+    let timeInfo = '';
+    if (durationMinutes <= 1) {
+        timeInfo = `<div class="detection-time"><span>🕐</span><span>${formattedLastDate}</span></div>`;
+    } else {
+        timeInfo = `
+            <div class="detection-time">
+                <span>🕐</span>
+                <span>First: ${formattedFirstDate}, Last: ${formattedLastDate}</span>
+            </div>
+            <div class="detection-duration">
+                <span>⏱️</span>
+                <span>${durationText}</span>
+            </div>
+        `;
+    }
     
     card.innerHTML = `
         <div class="card-header">
@@ -70,14 +108,12 @@ function renderDetectionCard(detection) {
             <div class="bird-info">
                 <div class="bird-name">${detection.species_common}</div>
                 <div class="bird-scientific">${detection.species_scientific}</div>
-                <span class="confidence-badge">${confidencePercent}% confidence</span>
+                <span class="confidence-badge">Best confidence: ${confidencePercent}%</span>
+                <span class="detection-count-badge">🎵 ${detection.detection_count} call${detection.detection_count !== 1 ? 's' : ''} detected</span>
             </div>
         </div>
         <div class="card-meta">
-            <div class="detection-time">
-                <span>🕐</span>
-                <span>${formattedDate}</span>
-            </div>
+            ${timeInfo}
         </div>
         ${detection.wiki_summary ? `
             <div class="wiki-summary collapsed" id="summary-${detection.id}">
@@ -147,6 +183,11 @@ function renderSpeciesItem(species) {
     item.className = 'species-item';
     
     const lastSeen = formatDate(species.last_seen);
+    const avgDetections = species.avg_detections ? Math.round(species.avg_detections) : 1;
+    const maxDuration = species.max_duration_minutes ? Math.round(species.max_duration_minutes) : 0;
+    const durationText = maxDuration < 1 ? 'Less than 1 min' : 
+                         maxDuration < 60 ? `${maxDuration} min` : 
+                         `${Math.floor(maxDuration / 60)}h ${maxDuration % 60}m`;
     
     item.innerHTML = `
         ${createBirdImage(species.image_url, 'small').outerHTML}
@@ -155,8 +196,16 @@ function renderSpeciesItem(species) {
             <div class="species-stats">
                 <div class="stat-item">
                     <span>🔢</span>
-                    <span class="visit-count">${species.count}</span>
-                    <span>visit${species.count !== 1 ? 's' : ''}</span>
+                    <span class="visit-count">${species.total_sessions}</span>
+                    <span>visit${species.total_sessions !== 1 ? 's' : ''}</span>
+                </div>
+                <div class="stat-item">
+                    <span>🎵</span>
+                    <span>Avg ${avgDetections} calls/visit</span>
+                </div>
+                <div class="stat-item">
+                    <span>⏱️</span>
+                    <span>Longest: ${durationText}</span>
                 </div>
                 <div class="stat-item">
                     <span>🕐</span>

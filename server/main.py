@@ -11,9 +11,10 @@ from pathlib import Path
 from datetime import datetime
 from fastapi import Header
 import uuid
+import os
 
-from config import UPLOAD_DIR, DATABASE_PATH, HOST, PORT, API_KEY
-from database import init_db, insert_detection, get_recent_detections, get_species_summary, get_detection_by_id, delete_detection
+from config import UPLOAD_DIR, DATABASE_PATH, HOST, PORT, API_KEY, SESSION_TIMEOUT_MINUTES
+from database import init_db, insert_session, find_active_session, update_session, get_recent_detections, get_species_summary, get_detection_by_id, delete_detection
 from analyzer import analyze_audio, fetch_bird_info
 
 # Initialize FastAPI app
@@ -64,31 +65,43 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
         detections = analyze_audio(str(filepath))
         
         # Process each detection
-        for detection in detections:
-            if len(detections) == 0:
-                os.remove(filepath)
-                print(f"No birds detected, deleted {filename}")
-                return JSONResponse({
-                    "status": "ok",
-                    "detections_found": 0
+        if len(detections) == 0:
+            os.remove(filepath)
+            print(f"No birds detected, deleted {filename}")
+            return JSONResponse({
+                "status": "ok",
+                "detections_found": 0
             })
-            # Fetch additional bird info from Wikipedia
-            bird_info = fetch_bird_info(detection['species_common'])
+
+        for detection in detections:
+            species = detection['species_common']
+            confidence = detection['confidence']
+            now = datetime.now().isoformat()
             
-            # Create detection record
-            detection_record = {
-                'species_common': detection['species_common'],
-                'species_scientific': detection['species_scientific'],
-                'confidence': detection['confidence'],
-                'audio_filename': filename,
-                'detected_at': datetime.now().isoformat(),
-                'image_url': bird_info['image_url'],
-                'wiki_summary': bird_info['wiki_summary']
-            }
+            # Check if there's an active session for this species
+            active_session = find_active_session(species, SESSION_TIMEOUT_MINUTES)
             
-            # Insert into database
-            detection_id = insert_detection(detection_record)
-            print(f"Saved detection: {detection['species_common']} (ID: {detection_id})")
+            if active_session:
+                # Update existing session
+                update_session(active_session['id'], confidence, now)
+                print(f"Updated session for {species} (count: {active_session['detection_count'] + 1})")
+            else:
+                # Create new session
+                bird_info = fetch_bird_info(species)
+                
+                detection_record = {
+                    'species_common': species,
+                    'species_scientific': detection['species_scientific'],
+                    'confidence': confidence,
+                    'audio_filename': filename,
+                    'first_detected_at': now,
+                    'last_detected_at': now,
+                    'image_url': bird_info['image_url'],
+                    'wiki_summary': bird_info['wiki_summary']
+                }
+                
+                session_id = insert_session(detection_record)
+                print(f"New session started for {species} (ID: {session_id})")
         
         return JSONResponse({
             "status": "ok",

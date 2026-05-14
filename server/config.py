@@ -36,3 +36,7 @@ if LAT and LAT.lower() != "none":
     LAT = float(LAT)
 if LON and LON.lower() != "none":
     LON = float(LON)
+
+# Session timeout for grouping repeated detections (in minutes)
+# If the same species is detected within this window, it updates the existing session
+SESSION_TIMEOUT_MINUTES = int(os.getenv("SESSION_TIMEOUT_MINUTES", "10"))
