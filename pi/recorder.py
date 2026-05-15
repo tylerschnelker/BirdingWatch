@@ -8,6 +8,7 @@ import numpy as np
 import requests
 import wave
 import os
+import time
 import queue
 from datetime import datetime
 from pathlib import Path
@@ -30,7 +31,8 @@ from config import (
 DEVICE = 0  # LavMicro-U (confirmed from sounddevice list)
 CHANNELS = 1  # FORCE mono capture (critical fix)
 
-RECORDING_DIR = Path("/tmp/birdwatch")
+# RECORDING_DIR = Path("/tmp/birdwatch")
+RECORDING_DIR = Path("/home/pi/birdwatch_recordings")
 RECORDING_DIR.mkdir(parents=True, exist_ok=True)
 
 audio_queue = queue.Queue()
@@ -178,12 +180,33 @@ def monitor():
 
                     print(f"[SAVED] {filename} ({len(audio)/SAMPLE_RATE:.1f}s)")
 
-                    # upload
-                    if upload_audio(filename):
-                        os.remove(filename)
-                        print("[CLEANUP] deleted local file")
+                    # ----------------------------
+                    # Upload with retry + ALWAYS cleanup
+                    # ----------------------------
+
+                    uploaded = False
+
+                    for attempt in range(3):
+                        print(f"[UPLOAD] attempt {attempt + 1}/3")
+
+                        if upload_audio(filename):
+                            uploaded = True
+                            break
+
+                        time.sleep(2)
+
+                    if uploaded:
+                        print("[UPLOAD SUCCESS]")
                     else:
-                        print("[WARN] kept file (upload failed)")
+                        print("[UPLOAD FAILED AFTER RETRIES]")
+
+                    # ALWAYS delete local temp file
+                    try:
+                        if filename.exists():
+                            os.remove(filename)
+                            print("[CLEANUP] deleted local file")
+                    except Exception as e:
+                        print(f"[CLEANUP ERROR] {e}")
 
                     recording_buffer = []
                     silence_counter = 0.0
@@ -201,8 +224,29 @@ def monitor():
 
                     print(f"[MAX SAVE] {filename}")
 
-                    if upload_audio(filename):
-                        os.remove(filename)
+                    uploaded = False
+
+                    for attempt in range(3):
+                        print(f"[UPLOAD] attempt {attempt + 1}/3")
+
+                        if upload_audio(filename):
+                            uploaded = True
+                            break
+
+                        time.sleep(2)
+
+                    if uploaded:
+                        print("[UPLOAD SUCCESS]")
+                    else:
+                        print("[UPLOAD FAILED AFTER RETRIES]")
+
+                    # ALWAYS delete local temp file
+                    try:
+                        if filename.exists():
+                            os.remove(filename)
+                            print("[CLEANUP] deleted local file")
+                    except Exception as e:
+                        print(f"[CLEANUP ERROR] {e}")
 
                     recording_buffer = []
                     silence_counter = 0.0

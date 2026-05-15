@@ -23,7 +23,7 @@ The application is deployed on a single **DigitalOcean Ubuntu server**.
 **Web Interface:**
 
 
-http://143.198.232.142:8000/
+https://marysbackyardbirds.xyz/
 
 
 The Raspberry Pi records audio locally and uploads detected clips to the server via a secure API key.
