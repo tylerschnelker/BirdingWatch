@@ -66,8 +66,7 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
         
         # Process each detection
         if len(detections) == 0:
-            # os.remove(filepath)
-            pass
+            os.remove(filepath)
             print(f"No birds detected, deleted {filename}")
             return JSONResponse({
                 "status": "ok",
