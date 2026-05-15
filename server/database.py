@@ -56,7 +56,7 @@ def insert_session(detection: Dict) -> int:
     Args:
         detection: Dictionary with keys: species_common, species_scientific,
                    confidence, audio_filename, first_detected_at, last_detected_at,
-                   image_url, wiki_summary
+                   detection_count (optional, defaults to 1), image_url, wiki_summary
     
     Returns:
         The ID of the newly inserted row
@@ -64,12 +64,14 @@ def insert_session(detection: Dict) -> int:
     conn = get_connection()
     cursor = conn.cursor()
     
+    detection_count = detection.get('detection_count', 1)
+    
     cursor.execute("""
         INSERT INTO detections (
             species_common, species_scientific, confidence, 
             audio_filename, first_detected_at, last_detected_at, 
             detection_count, image_url, wiki_summary
-        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         detection['species_common'],
         detection['species_scientific'],
@@ -77,6 +79,7 @@ def insert_session(detection: Dict) -> int:
         detection['audio_filename'],
         detection['first_detected_at'],
         detection['last_detected_at'],
+        detection_count,
         detection.get('image_url'),
         detection.get('wiki_summary')
     ))
@@ -266,6 +269,40 @@ def update_session(session_id: int, confidence: float, last_detected_at: str) ->
             confidence = CASE WHEN ? > confidence THEN ? ELSE confidence END
         WHERE id = ?
     """, (last_detected_at, confidence, confidence, session_id))
+    
+    conn.commit()
+    conn.close()
+
+
+def update_session_with_count(session_id: int, confidence: float, last_detected_at: str, 
+                               detection_count_increment: int, audio_filename: str) -> None:
+    """
+    Update an existing session with multiple detections from one audio file.
+    
+    Increments detection_count by the specified amount, updates last_detected_at,
+    updates audio_filename to the most recent file, and updates confidence if higher.
+    
+    Args:
+        session_id: The ID of the session to update
+        confidence: The max confidence from the new detections
+        last_detected_at: ISO format timestamp of the new detection
+        detection_count_increment: Number of detections to add to the count
+        audio_filename: The filename of the most recent audio file
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Update session: increment count by specified amount, update last_detected_at,
+    # update audio_filename, and update confidence only if new confidence is higher
+    cursor.execute("""
+        UPDATE detections
+        SET detection_count = detection_count + ?,
+            last_detected_at = ?,
+            audio_filename = ?,
+            confidence = CASE WHEN ? > confidence THEN ? ELSE confidence END
+        WHERE id = ?
+    """, (detection_count_increment, last_detected_at, audio_filename, 
+          confidence, confidence, session_id))
     
     conn.commit()
     conn.close()

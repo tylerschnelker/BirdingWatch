@@ -14,7 +14,7 @@ import uuid
 import os
 
 from config import UPLOAD_DIR, DATABASE_PATH, HOST, PORT, API_KEY, SESSION_TIMEOUT_MINUTES
-from database import init_db, insert_session, find_active_session, update_session, get_recent_detections, get_species_summary, get_detection_by_id, delete_detection
+from database import init_db, insert_session, find_active_session, update_session, update_session_with_count, get_recent_detections, get_species_summary, get_detection_by_id, delete_detection
 from analyzer import analyze_audio, fetch_bird_info
 
 # Initialize FastAPI app
@@ -73,39 +73,62 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
                 "detections_found": 0
             })
 
+        # Group detections by species to handle multiple chirps in one file
+        from collections import defaultdict
+        species_detections = defaultdict(list)
+        
         for detection in detections:
             species = detection['species_common']
-            confidence = detection['confidence']
-            now = datetime.now().isoformat()
+            species_detections[species].append(detection)
+        
+        now = datetime.now().isoformat()
+        total_sessions_updated = 0
+        
+        # Process each species group
+        for species, species_group in species_detections.items():
+            # Calculate aggregate stats for this species in this file
+            detection_count = len(species_group)
+            max_confidence = max(d['confidence'] for d in species_group)
+            scientific_name = species_group[0]['species_scientific']
             
             # Check if there's an active session for this species
             active_session = find_active_session(species, SESSION_TIMEOUT_MINUTES)
             
             if active_session:
-                # Update existing session
-                update_session(active_session['id'], confidence, now)
-                print(f"Updated session for {species} (count: {active_session['detection_count'] + 1})")
+                # Update existing session: increment count by number of detections in this file
+                update_session_with_count(
+                    active_session['id'], 
+                    max_confidence, 
+                    now, 
+                    detection_count,
+                    filename
+                )
+                print(f"Updated session for {species} (count: {active_session['detection_count'] + detection_count}, added {detection_count} calls)")
             else:
                 # Create new session
                 bird_info = fetch_bird_info(species)
                 
                 detection_record = {
                     'species_common': species,
-                    'species_scientific': detection['species_scientific'],
-                    'confidence': confidence,
+                    'species_scientific': scientific_name,
+                    'confidence': max_confidence,
                     'audio_filename': filename,
                     'first_detected_at': now,
                     'last_detected_at': now,
+                    'detection_count': detection_count,
                     'image_url': bird_info['image_url'],
                     'wiki_summary': bird_info['wiki_summary']
                 }
                 
                 session_id = insert_session(detection_record)
-                print(f"New session started for {species} (ID: {session_id})")
+                print(f"New session started for {species} (ID: {session_id}, calls: {detection_count})")
+            
+            total_sessions_updated += 1
         
         return JSONResponse({
             "status": "ok",
-            "detections_found": len(detections)
+            "detections_found": len(detections),
+            "sessions_updated": total_sessions_updated
         })
     
     except Exception as e:
