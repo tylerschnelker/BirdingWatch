@@ -24,7 +24,7 @@ HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
 
 # BirdNET confidence threshold - only save detections above this score
-BIRDNET_CONFIDENCE_THRESHOLD = float(os.getenv("BIRDNET_CONFIDENCE_THRESHOLD", "0.7"))
+BIRDNET_CONFIDENCE_THRESHOLD = float(os.getenv("BIRDNET_CONFIDENCE_THRESHOLD", "0.3"))
 
 # Location coordinates for BirdNET location filtering (optional)
 # Fill in your latitude and longitude for better accuracy
