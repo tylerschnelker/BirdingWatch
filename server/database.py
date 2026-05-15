@@ -223,19 +223,15 @@ def find_active_session(species_common: str, timeout_minutes: int) -> Optional[D
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
-    # Calculate the cutoff time
-    cursor.execute("""
-        SELECT datetime('now', '-' || ? || ' minutes') as cutoff
-    """, (timeout_minutes,))
-    cutoff = cursor.fetchone()['cutoff']
-    
     # Look for a session within the timeout window
+    # Use SQLite's datetime functions to compare ISO timestamps correctly
     cursor.execute("""
         SELECT * FROM detections
-        WHERE species_common = ? AND last_detected_at > ?
+        WHERE species_common = ? 
+        AND datetime(last_detected_at) > datetime('now', '-' || ? || ' minutes')
         ORDER BY last_detected_at DESC
         LIMIT 1
-    """, (species_common, cutoff))
+    """, (species_common, timeout_minutes))
     
     row = cursor.fetchone()
     conn.close()
