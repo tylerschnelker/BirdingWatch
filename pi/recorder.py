@@ -1,6 +1,6 @@
 """
 Continuous audio monitoring and recording for bird detection.
-Runs on Raspberry Pi with USB microphone, records bird calls, and uploads to desktop server.
+Fixed version: stable stream-based capture (no blocking sd.rec loop).
 """
 
 import sounddevice as sd
@@ -8,207 +8,221 @@ import numpy as np
 import requests
 import wave
 import os
-import time
+import queue
 from datetime import datetime
 from pathlib import Path
 import sys
 from config import API_KEY
 
-# Import configuration
 from config import (
     DESKTOP_SERVER_URL,
     SAMPLE_RATE,
-    CHANNELS,
     SILENCE_THRESHOLD,
     MIN_RECORDING_SECONDS,
     MAX_RECORDING_SECONDS,
     UPLOAD_ENDPOINT
 )
 
-# Local temporary directory for storing recordings before upload
+# ----------------------------
+# Setup
+# ----------------------------
+
+DEVICE = 0  # LavMicro-U (confirmed from sounddevice list)
+CHANNELS = 1  # FORCE mono capture (critical fix)
+
 RECORDING_DIR = Path("/tmp/birdwatch")
 RECORDING_DIR.mkdir(parents=True, exist_ok=True)
 
+audio_queue = queue.Queue()
+
+# state
+is_recording = False
+recording_buffer = []
+silence_counter = 0.0
+SILENCE_LIMIT = 2.0  # seconds of silence to stop recording
+
+
+# ----------------------------
+# Audio utilities
+# ----------------------------
 
 def calculate_rms(audio_chunk):
-    """
-    Calculate the Root Mean Square (RMS) of an audio chunk.
-    RMS is a measure of audio amplitude/loudness.
-    """
     return np.sqrt(np.mean(audio_chunk.astype(np.float32) ** 2))
 
 
 def save_wav(filename, audio_data, sample_rate):
     """
-    Save audio data as a WAV file.
+    Save mono float audio [-1,1] to WAV.
     """
-    # Convert to 16-bit PCM for WAV format
-    audio_int16 = (audio_data * 32767).astype(np.int16)
-    
-    with wave.open(str(filename), 'wb') as wav_file:
-        wav_file.setnchannels(CHANNELS)
-        wav_file.setsampwidth(2)  # 2 bytes for 16-bit
+    audio_int16 = np.clip(audio_data, -1, 1)
+    audio_int16 = (audio_int16 * 32767).astype(np.int16)
+
+    with wave.open(str(filename), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
         wav_file.setframerate(sample_rate)
         wav_file.writeframes(audio_int16.tobytes())
 
 
 def upload_audio(filepath):
-    """
-    Upload the audio file to the desktop server via POST request.
-    Returns True if successful, False otherwise.
-    """
     upload_url = DESKTOP_SERVER_URL + UPLOAD_ENDPOINT
-    
+
     try:
         with open(filepath, 'rb') as f:
-            files = {'file': (os.path.basename(filepath), f, 'audio/wav')}
-            response = requests.post(upload_url, files=files, timeout=30, headers={"x-api-key": API_KEY})
-        
+            files = {
+                'file': (os.path.basename(filepath), f, 'audio/wav')
+            }
+            response = requests.post(
+                upload_url,
+                files=files,
+                timeout=30,
+                headers={"x-api-key": API_KEY}
+            )
+
         if response.status_code == 200:
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Upload successful: {filepath.name}")
+            print(f"[UPLOAD OK] {filepath.name}")
             return True
         else:
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Upload failed: HTTP {response.status_code}")
+            print(f"[UPLOAD FAIL] HTTP {response.status_code}")
             return False
+
     except Exception as e:
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Upload error: {e}")
+        print(f"[UPLOAD ERROR] {e}")
         return False
 
 
-def monitor_and_record():
+# ----------------------------
+# Sounddevice callback (CRITICAL FIX)
+# ----------------------------
+
+def audio_callback(indata, frames, time, status):
     """
-    Main audio monitoring loop.
-    Continuously listens for bird calls and uploads them to the server.
+    This runs in real-time thread from sounddevice.
+    Must be lightweight.
     """
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Starting audio monitoring...")
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Server URL: {DESKTOP_SERVER_URL}")
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Silence threshold: {SILENCE_THRESHOLD}")
-    
-    # Audio chunk size for monitoring (0.1 seconds)
-    chunk_size = int(SAMPLE_RATE * 0.1)
-    
-    # Rolling buffer for recording
-    recording_buffer = []
-    is_recording = False
-    silence_counter = 0
-    SILENCE_SECONDS_TO_END = 2  # End recording after 2 seconds of silence
-    
-    try:
+    if status:
+        print("Audio status:", status)
+
+    audio_queue.put(indata.copy())
+
+
+# ----------------------------
+# Main loop
+# ----------------------------
+
+def monitor():
+    global is_recording, recording_buffer, silence_counter
+
+    print("Starting BirdWatch recorder (stream mode)...")
+    print(f"Device: {DEVICE} | Sample rate: {SAMPLE_RATE} | Mono: {CHANNELS}")
+
+    with sd.InputStream(
+        device=DEVICE,
+        channels=CHANNELS,
+        samplerate=SAMPLE_RATE,
+        callback=audio_callback,
+        dtype=np.float32,
+        blocksize=int(SAMPLE_RATE * 0.1)  # 100ms chunks
+    ):
+
         while True:
-            # Read a chunk of audio
-            audio_chunk = sd.rec(
-                chunk_size,
-                samplerate=SAMPLE_RATE,
-                channels=CHANNELS,
-                dtype=np.float32,
-                blocking=True,
-                device=0
-            )
-            sd.wait()
-            
-            # Convert stereo to mono by averaging channels
-            if audio_chunk.ndim == 2:
-                audio_chunk = audio_chunk.mean(axis=1, keepdims=True)
-            
-            # Calculate RMS (loudness)
-            rms = calculate_rms(audio_chunk)
-            
-            # Check if we should start recording
+            data = audio_queue.get()
+
+            # flatten to 1D mono
+            chunk = np.squeeze(data)
+
+            rms = calculate_rms(chunk)
+
+            # ----------------------------
+            # START recording
+            # ----------------------------
             if not is_recording and rms > SILENCE_THRESHOLD:
                 is_recording = True
-                recording_buffer = [audio_chunk]
-                silence_counter = 0
-                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Bird call detected, started recording (RMS: {rms:.4f})")
-            
-            # If recording, continue
-            elif is_recording:
-                recording_buffer.append(audio_chunk)
-                
-                # Check for silence to end recording
-                if rms < SILENCE_THRESHOLD:
-                    silence_counter += 0.1  # Each chunk is 0.1 seconds
-                else:
-                    silence_counter = 0
-                
-                # End recording conditions
-                current_duration = len(recording_buffer) * 0.1
-                if silence_counter >= SILENCE_SECONDS_TO_END and current_duration >= MIN_RECORDING_SECONDS:
-                    # End recording
-                    is_recording = False
-                    
-                    # Concatenate all chunks
-                    full_audio = np.concatenate(recording_buffer)
-                    
-                    # Enforce max duration
-                    max_samples = int(MAX_RECORDING_SECONDS * SAMPLE_RATE)
-                    if len(full_audio) > max_samples:
-                        full_audio = full_audio[:max_samples]
-                    
-                    # Save to file
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"birdcall_{timestamp}.wav"
-                    filepath = RECORDING_DIR / filename
-                    
-                    save_wav(filepath, full_audio, SAMPLE_RATE)
-                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Saved clip: {filename} ({len(full_audio)/SAMPLE_RATE:.1f}s)")
-                    
-                    # Upload to server
-                    if upload_audio(filepath):
-                        # Delete local file after successful upload
-                        os.remove(filepath)
-                        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Deleted local file: {filename}")
-                    else:
-                        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Keeping local file due to upload failure")
-                    
-                    # Reset buffer
-                    recording_buffer = []
-                    silence_counter = 0
-                
-                # Also enforce max duration during recording
-                elif current_duration >= MAX_RECORDING_SECONDS:
-                    is_recording = False
-                    full_audio = np.concatenate(recording_buffer)
-                    
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"birdcall_{timestamp}.wav"
-                    filepath = RECORDING_DIR / filename
-                    
-                    save_wav(filepath, full_audio, SAMPLE_RATE)
-                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Saved clip (max duration): {filename}")
-                    
-                    if upload_audio(filepath):
-                        os.remove(filepath)
-                        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Deleted local file: {filename}")
-                    else:
-                        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Keeping local file due to upload failure")
-                    
-                    recording_buffer = []
-                    silence_counter = 0
-                
-                # Discard if too short (silence ended too quickly)
-                elif silence_counter >= SILENCE_SECONDS_TO_END and current_duration < MIN_RECORDING_SECONDS:
-                    is_recording = False
-                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Discarded short clip ({current_duration:.1f}s < {MIN_RECORDING_SECONDS}s)")
-                    recording_buffer = []
-                    silence_counter = 0
-    
-    except KeyboardInterrupt:
-        raise
-    except Exception as e:
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error in monitoring loop: {e}")
-        raise
+                recording_buffer = []
+                silence_counter = 0.0
 
+                print(f"[START] RMS={rms:.4f}")
+
+            # ----------------------------
+            # RECORDING STATE
+            # ----------------------------
+            if is_recording:
+                recording_buffer.append(chunk)
+
+                if rms < SILENCE_THRESHOLD:
+                    silence_counter += 0.1
+                else:
+                    silence_counter = 0.0
+
+                duration = len(recording_buffer) * 0.1
+
+                # ----------------------------
+                # STOP conditions
+                # ----------------------------
+                if (silence_counter >= SILENCE_LIMIT and
+                        duration >= MIN_RECORDING_SECONDS):
+
+                    is_recording = False
+
+                    audio = np.concatenate(recording_buffer)
+
+                    # limit max duration
+                    max_samples = int(MAX_RECORDING_SECONDS * SAMPLE_RATE)
+                    if len(audio) > max_samples:
+                        audio = audio[:max_samples]
+
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = RECORDING_DIR / f"birdcall_{timestamp}.wav"
+
+                    save_wav(filename, audio, SAMPLE_RATE)
+
+                    print(f"[SAVED] {filename} ({len(audio)/SAMPLE_RATE:.1f}s)")
+
+                    # upload
+                    if upload_audio(filename):
+                        os.remove(filename)
+                        print("[CLEANUP] deleted local file")
+                    else:
+                        print("[WARN] kept file (upload failed)")
+
+                    recording_buffer = []
+                    silence_counter = 0.0
+
+                # max duration safety
+                elif duration >= MAX_RECORDING_SECONDS:
+                    is_recording = False
+
+                    audio = np.concatenate(recording_buffer)
+
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = RECORDING_DIR / f"birdcall_{timestamp}.wav"
+
+                    save_wav(filename, audio, SAMPLE_RATE)
+
+                    print(f"[MAX SAVE] {filename}")
+
+                    if upload_audio(filename):
+                        os.remove(filename)
+
+                    recording_buffer = []
+                    silence_counter = 0.0
+
+
+# ----------------------------
+# Entry point
+# ----------------------------
 
 def main():
     while True:
         try:
-            monitor_and_record()
+            monitor()
         except KeyboardInterrupt:
-            print("\nStopping BirdWatch. Goodbye!")
+            print("\nStopped.")
             sys.exit(0)
         except Exception as e:
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Fatal error: {e}")
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Restarting in 5 seconds...")
+            print("Fatal error:", e)
+            print("Restarting in 5s...")
+            import time
             time.sleep(5)
 
 
