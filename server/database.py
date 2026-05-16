@@ -26,6 +26,9 @@ def init_db():
     NOTE: If schema changes, the existing birdwatch.db file must be deleted
     to recreate the table with the new schema.
     """
+    import time
+    from datetime import datetime
+    
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -40,8 +43,29 @@ def init_db():
             last_detected_at TEXT NOT NULL,
             detection_count INTEGER DEFAULT 1,
             image_url TEXT,
-            wiki_summary TEXT
+            wiki_summary TEXT,
+            first_detected_timestamp INTEGER,
+            last_detected_timestamp INTEGER
         )
+    """)
+    
+    # Add timestamp columns if they don't exist (for existing databases)
+    try:
+        cursor.execute("ALTER TABLE detections ADD COLUMN first_detected_timestamp INTEGER")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    
+    try:
+        cursor.execute("ALTER TABLE detections ADD COLUMN last_detected_timestamp INTEGER")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    
+    # Migrate existing rows: populate NULL timestamps from ISO strings
+    cursor.execute("""
+        UPDATE detections
+        SET first_detected_timestamp = CAST(strftime('%s', first_detected_at) AS INTEGER),
+            last_detected_timestamp = CAST(strftime('%s', last_detected_at) AS INTEGER)
+        WHERE first_detected_timestamp IS NULL OR last_detected_timestamp IS NULL
     """)
     
     conn.commit()
@@ -61,17 +85,20 @@ def insert_session(detection: Dict) -> int:
     Returns:
         The ID of the newly inserted row
     """
+    import time
     conn = get_connection()
     cursor = conn.cursor()
     
     detection_count = detection.get('detection_count', 1)
+    current_timestamp = int(time.time())
     
     cursor.execute("""
         INSERT INTO detections (
             species_common, species_scientific, confidence, 
             audio_filename, first_detected_at, last_detected_at, 
-            detection_count, image_url, wiki_summary
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            detection_count, image_url, wiki_summary,
+            first_detected_timestamp, last_detected_timestamp
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         detection['species_common'],
         detection['species_scientific'],
@@ -81,7 +108,9 @@ def insert_session(detection: Dict) -> int:
         detection['last_detected_at'],
         detection_count,
         detection.get('image_url'),
-        detection.get('wiki_summary')
+        detection.get('wiki_summary'),
+        current_timestamp,
+        current_timestamp
     ))
     
     row_id = cursor.lastrowid
@@ -107,7 +136,7 @@ def get_recent_detections(limit: int = 50) -> List[Dict]:
     
     cursor.execute("""
         SELECT * FROM detections
-        ORDER BY last_detected_at DESC
+        ORDER BY last_detected_timestamp DESC
         LIMIT ?
     """, (limit,))
     
@@ -138,7 +167,7 @@ def get_species_summary() -> List[Dict]:
             AVG(detection_count) as avg_detections,
             MAX(
                 CAST(
-                    (julianday(last_detected_at) - julianday(first_detected_at)) * 24 * 60
+                    (last_detected_timestamp - first_detected_timestamp) / 60.0
                     AS REAL
                 )
             ) as max_duration_minutes,
@@ -219,19 +248,22 @@ def find_active_session(species_common: str, timeout_minutes: int) -> Optional[D
     Returns:
         Session dictionary if found, None otherwise
     """
+    import time
     conn = get_connection()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
-    # Look for a session within the timeout window
-    # Use SQLite's datetime functions to compare ISO timestamps correctly
+    # Calculate cutoff time as Unix timestamp (seconds since epoch)
+    current_time = int(time.time())
+    cutoff_seconds = current_time - (timeout_minutes * 60)
+    
+    # Look for a session within the timeout window using integer comparison
     cursor.execute("""
         SELECT * FROM detections
-        WHERE species_common = ? 
-        AND datetime(last_detected_at) > datetime('now', '-' || ? || ' minutes')
-        ORDER BY last_detected_at DESC
+        WHERE species_common = ? AND last_detected_timestamp > ?
+        ORDER BY last_detected_timestamp DESC
         LIMIT 1
-    """, (species_common, timeout_minutes))
+    """, (species_common, cutoff_seconds))
     
     row = cursor.fetchone()
     conn.close()
@@ -285,20 +317,24 @@ def update_session_with_count(session_id: int, confidence: float, last_detected_
         detection_count_increment: Number of detections to add to the count
         audio_filename: The filename of the most recent audio file
     """
+    import time
     conn = get_connection()
     cursor = conn.cursor()
     
+    current_timestamp = int(time.time())
+    
     # Update session: increment count by specified amount, update last_detected_at,
-    # update audio_filename, and update confidence only if new confidence is higher
+    # update audio_filename, update timestamp, and update confidence only if new confidence is higher
     cursor.execute("""
         UPDATE detections
         SET detection_count = detection_count + ?,
             last_detected_at = ?,
             audio_filename = ?,
+            last_detected_timestamp = ?,
             confidence = CASE WHEN ? > confidence THEN ? ELSE confidence END
         WHERE id = ?
     """, (detection_count_increment, last_detected_at, audio_filename, 
-          confidence, confidence, session_id))
+          current_timestamp, confidence, confidence, session_id))
     
     conn.commit()
     conn.close()
