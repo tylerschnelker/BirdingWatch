@@ -398,9 +398,16 @@ app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
 async def serve_index():
     """
     Serve the main web UI at the root route.
+
+    Explicit no-cache: without this, FileResponse sets no Cache-Control
+    header at all, so browsers apply their own heuristic caching - the
+    service worker's self-healing/update logic lives INSIDE this file, so if
+    the browser never re-fetches it, that logic never gets a chance to run.
+    This is especially sticky for phones with the site added to the home
+    screen. Always revalidate with the server instead.
     """
     index_path = web_dir / "index.html"
-    return FileResponse(index_path)
+    return FileResponse(index_path, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/sw.js")
@@ -411,8 +418,12 @@ async def serve_service_worker():
     the directory of its own URL - registering it from under /static/ meant
     it could only ever control requests already under /static/, never the
     app's actual pages, silently making all of its caching logic inert.
+
+    Explicit no-cache for the same reason as "/" above - browsers do treat
+    service worker scripts somewhat specially for update checks, but that
+    shouldn't be relied on alone across all browsers/versions.
     """
-    return FileResponse(web_dir / "sw.js", media_type="application/javascript")
+    return FileResponse(web_dir / "sw.js", media_type="application/javascript", headers={"Cache-Control": "no-cache"})
 
 
 if __name__ == "__main__":
