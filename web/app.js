@@ -449,6 +449,96 @@ function setupTabs() {
     });
 }
 
+// Convert a base64url VAPID public key string into the Uint8Array format
+// pushManager.subscribe() requires for applicationServerKey.
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i++) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
+// Show/hide and label the notification toggle button based on browser
+// support and current subscription state. Stays hidden on browsers that
+// can't do push at all (e.g. iOS Safari unless installed to the home
+// screen) rather than showing a dead-end button.
+async function initPushUI() {
+    const btn = document.getElementById('notify-toggle-btn');
+    if (!btn) return;
+
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        return;
+    }
+
+    btn.style.display = '';
+
+    const registration = await navigator.serviceWorker.ready;
+    const existingSubscription = await registration.pushManager.getSubscription();
+    updateNotifyButton(btn, !!existingSubscription);
+
+    btn.addEventListener('click', () => toggleNotifications(btn));
+}
+
+function updateNotifyButton(btn, subscribed) {
+    btn.textContent = subscribed ? '🔕 Notifications on' : '🔔 Enable notifications';
+    btn.classList.toggle('notify-active', subscribed);
+}
+
+async function toggleNotifications(btn) {
+    const registration = await navigator.serviceWorker.ready;
+    const existingSubscription = await registration.pushManager.getSubscription();
+
+    if (existingSubscription) {
+        try {
+            await existingSubscription.unsubscribe();
+            await fetch('/api/push/subscribe', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ endpoint: existingSubscription.endpoint })
+            });
+        } catch (error) {
+            console.error('Error unsubscribing from notifications:', error);
+        }
+        updateNotifyButton(btn, false);
+        return;
+    }
+
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+        alert('Notifications were blocked. You can re-enable them in your browser/site settings.');
+        return;
+    }
+
+    try {
+        const keyResponse = await fetch('/api/push/vapid-public-key');
+        if (!keyResponse.ok) {
+            alert("Notifications aren't set up on the server yet.");
+            return;
+        }
+        const { publicKey } = await keyResponse.json();
+
+        const subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(publicKey)
+        });
+
+        await fetch('/api/push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(subscription.toJSON())
+        });
+
+        updateNotifyButton(btn, true);
+    } catch (error) {
+        console.error('Error subscribing to notifications:', error);
+        alert('Could not enable notifications. Please try again.');
+    }
+}
+
 // Initialize app
 async function init() {
     setupTabs();
@@ -456,6 +546,7 @@ async function init() {
     await initToday();
     loadDayView();
     loadSpecies();
+    initPushUI();
 
     // Auto-refresh every 30 seconds. Only the "today" view can change, so
     // don't bother re-fetching a past day the user is browsing.

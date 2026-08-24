@@ -46,3 +46,11 @@ if LON and LON.lower() != "none":
 # Session timeout for grouping repeated detections (in minutes)
 # If the same species is detected within this window, it updates the existing session
 SESSION_TIMEOUT_MINUTES = int(os.getenv("SESSION_TIMEOUT_MINUTES", "10"))
+
+# Web Push (VAPID) keys for "first time ever species" notifications. All
+# default to None - the feature no-ops gracefully if unconfigured rather than
+# crashing anything. Generate once with py_vapid and never regenerate after
+# subscribers exist, since a key change invalidates every existing subscription.
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY")
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY")
+VAPID_CLAIM_EMAIL = os.getenv("VAPID_CLAIM_EMAIL")

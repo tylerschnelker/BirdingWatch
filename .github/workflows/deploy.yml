@@ -28,4 +28,6 @@ jobs:
           script: |
             cd /root/BirdingWatch/server
             git pull
+            source venv/bin/activate
+            pip install -r requirements.txt
             sudo systemctl restart birdwatch

@@ -90,6 +90,17 @@ def init_db():
         ON detections(species_common, last_detected_timestamp)
     """)
 
+    # Web Push subscriptions (browsers that opted into "first time ever" alerts).
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            endpoint TEXT NOT NULL UNIQUE,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+    """)
+
     conn.commit()
     conn.close()
     print(f"Database initialized at {DATABASE_PATH}")
@@ -622,3 +633,76 @@ def get_day_species_visits(species_common: str, detection_date: str,
         row['audio_available'] = row['audio_filename'] == best_filename
 
     return rows
+
+
+# ----------------------------------------------------------------------------
+# Web Push subscriptions
+# ----------------------------------------------------------------------------
+
+def add_push_subscription(endpoint: str, p256dh: str, auth: str) -> None:
+    """
+    Register (or refresh) a browser's push subscription. Idempotent: a
+    browser can re-subscribe with the same endpoint but rotated keys.
+    """
+    import time
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO push_subscriptions (endpoint, p256dh, auth, created_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth
+    """, (endpoint, p256dh, auth, int(time.time())))
+
+    conn.commit()
+    conn.close()
+
+
+def remove_push_subscription(endpoint: str) -> bool:
+    """
+    Remove a push subscription by its endpoint.
+
+    Returns:
+        True if a row was deleted, False if not found.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
+
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return deleted
+
+
+def get_all_push_subscriptions() -> List[Dict]:
+    """
+    Get every registered push subscription.
+    """
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM push_subscriptions")
+    rows = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+
+    return rows
+
+
+def count_all_sessions_for_species(species_common: str) -> int:
+    """
+    Count how many sessions (ever, across all days) exist for a species.
+    Used right after inserting a brand-new session to check whether it was
+    that species' very first detection ever (count == 1 means yes).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM detections WHERE species_common = ?", (species_common,))
+    count = cursor.fetchone()[0]
+    conn.close()
+
+    return count

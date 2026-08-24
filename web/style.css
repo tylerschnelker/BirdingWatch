@@ -78,6 +78,27 @@ h1 {
     color: #74c69d;
 }
 
+.notify-toggle {
+    margin-top: 0.75rem;
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    color: white;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.4rem 0.9rem;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.notify-toggle:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.notify-toggle.notify-active {
+    background: rgba(255, 255, 255, 0.3);
+}
+
 /* Tabs */
 .tabs {
     display: flex;

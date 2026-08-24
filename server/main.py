@@ -4,7 +4,7 @@ Receives audio uploads from Pi, analyzes with BirdNET, stores in SQLite,
 and serves a web UI for viewing detections.
 """
 
-from fastapi import FastAPI, UploadFile, File, Query
+from fastapi import FastAPI, UploadFile, File, Query, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
@@ -13,14 +13,19 @@ from fastapi import Header
 import uuid
 import os
 
-from config import UPLOAD_DIR, DATABASE_PATH, HOST, PORT, API_KEY, SESSION_TIMEOUT_MINUTES, SINGLETON_CONFIDENCE_THRESHOLD
+from config import (
+    UPLOAD_DIR, DATABASE_PATH, HOST, PORT, API_KEY, SESSION_TIMEOUT_MINUTES,
+    SINGLETON_CONFIDENCE_THRESHOLD, VAPID_PUBLIC_KEY
+)
 from database import (
     init_db, insert_session, find_active_session, update_session, update_session_with_count,
     get_recent_detections, get_species_summary, get_detection_by_id, delete_detection,
     get_daily_best, insert_daily_best, update_daily_best, count_daily_best_references,
-    get_daily_best_by_filename, delete_daily_best, get_day_species_summary, get_day_species_visits
+    get_daily_best_by_filename, delete_daily_best, get_day_species_summary, get_day_species_visits,
+    count_all_sessions_for_species, add_push_subscription, remove_push_subscription
 )
 from analyzer import analyze_audio, fetch_bird_info
+from notifications import send_first_ever_notification
 
 # Initialize FastAPI app
 app = FastAPI(title="BirdWatch", description="Backyard bird tracking system")
@@ -140,6 +145,9 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
 
                 session_id = insert_session(detection_record)
                 print(f"New session started for {species} (ID: {session_id}, calls: {detection_count})")
+
+                if count_all_sessions_for_species(species) == 1:
+                    send_first_ever_notification(species, scientific_name)
 
             total_sessions_updated += 1
 
@@ -327,6 +335,57 @@ async def get_day_species_visits_endpoint(date: str, species_common: str):
     start_ts, end_ts = bounds
     visits = get_day_species_visits(species_common, date, start_ts, end_ts)
     return JSONResponse({"species_common": species_common, "date": date, "visits": visits})
+
+
+@app.get("/api/push/vapid-public-key")
+async def get_vapid_public_key():
+    """
+    Get the VAPID public key the frontend needs to create a push subscription.
+    Kept in one place (server config) instead of hardcoded in the frontend.
+    """
+    if not VAPID_PUBLIC_KEY:
+        return JSONResponse({
+            "status": "error",
+            "message": "Push notifications are not configured on this server"
+        }, status_code=503)
+
+    return JSONResponse({"publicKey": VAPID_PUBLIC_KEY})
+
+
+@app.post("/api/push/subscribe")
+async def subscribe_push(request: Request):
+    """
+    Register a browser's push subscription. Body is the standard
+    PushSubscription.toJSON() shape: {endpoint, keys: {p256dh, auth}}.
+    Idempotent - re-subscribing with the same endpoint just refreshes keys.
+    """
+    body = await request.json()
+    endpoint = body.get("endpoint")
+    keys = body.get("keys", {})
+    p256dh = keys.get("p256dh")
+    auth = keys.get("auth")
+
+    if not endpoint or not p256dh or not auth:
+        return JSONResponse({"status": "error", "message": "Invalid subscription payload"}, status_code=400)
+
+    add_push_subscription(endpoint, p256dh, auth)
+    return JSONResponse({"status": "ok"})
+
+
+@app.delete("/api/push/subscribe")
+async def unsubscribe_push(request: Request):
+    """
+    Remove a browser's push subscription (user disabled notifications, or the
+    browser reports the subscription is no longer valid).
+    """
+    body = await request.json()
+    endpoint = body.get("endpoint")
+
+    if not endpoint:
+        return JSONResponse({"status": "error", "message": "Missing endpoint"}, status_code=400)
+
+    remove_push_subscription(endpoint)
+    return JSONResponse({"status": "ok"})
 
 
 # Mount static files (web UI)

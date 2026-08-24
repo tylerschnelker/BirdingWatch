@@ -50,3 +50,33 @@ self.addEventListener('fetch', event => {
             .catch(() => caches.match(event.request))
     );
 });
+
+self.addEventListener('push', event => {
+    let payload = { title: 'BirdWatch', body: 'New bird activity detected.', url: '/' };
+    if (event.data) {
+        try { payload = event.data.json(); } catch (e) { /* keep default */ }
+    }
+
+    event.waitUntil(
+        self.registration.showNotification(payload.title, {
+            body: payload.body,
+            icon: '/static/icons/icon-192.png',
+            badge: '/static/icons/icon-192.png',
+            data: { url: payload.url || '/' }
+        })
+    );
+});
+
+self.addEventListener('notificationclick', event => {
+    event.notification.close();
+    const targetUrl = event.notification.data && event.notification.data.url ? event.notification.data.url : '/';
+
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+            for (const client of clientList) {
+                if ('focus' in client) return client.focus();
+            }
+            return clients.openWindow(targetUrl);
+        })
+    );
+});
