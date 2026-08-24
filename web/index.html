@@ -10,7 +10,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🐦 BirdWatch - Your Backyard Bird Tracker</title>
     <link rel="stylesheet" href="/static/style.css">
-    <link rel="icon" href="data:image/png;base64,iVBORw0KGgo=">
+    <link rel="icon" href="/static/icons/icon-192.png" type="image/png">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
     <script src="/static/app.js"></script>
 </head>
 <body>
@@ -54,7 +55,15 @@
     </footer>
 <script>
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/static/sw.js')
+        // Clean up the old mis-scoped registration (served from /static/sw.js,
+        // whose default scope was /static/ - it could never actually control
+        // the app's real pages, only requests already under /static/).
+        navigator.serviceWorker.getRegistrations().then(regs => {
+            regs.forEach(reg => {
+                if (reg.scope.endsWith('/static/')) reg.unregister();
+            });
+        });
+        navigator.serviceWorker.register('/sw.js')
             .then(() => console.log('Service Worker registered'))
             .catch(err => console.log('Service Worker error:', err));
     }

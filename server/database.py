@@ -539,7 +539,7 @@ def get_day_species_summary(detection_date: str, start_ts: int, end_ts: int) -> 
         List of dicts (one per species detected that day) with keys:
         species_common, species_scientific, visit_count, total_calls,
         best_confidence, last_seen_at, last_seen_timestamp, image_url,
-        wiki_summary, all_time_sessions, audio_filename (nullable).
+        wiki_summary, all_time_sessions, is_first_ever, audio_filename (nullable).
         Sorted so rarer species (fewer all-time sessions) surface first, with
         more recently-seen species as the tiebreaker.
     """
@@ -558,7 +558,8 @@ def get_day_species_summary(detection_date: str, start_ts: int, end_ts: int) -> 
             MAX(d.last_detected_timestamp) as last_seen_timestamp,
             MAX(d.image_url) as image_url,
             MAX(d.wiki_summary) as wiki_summary,
-            (SELECT COUNT(*) FROM detections d2 WHERE d2.species_common = d.species_common) as all_time_sessions
+            (SELECT COUNT(*) FROM detections d2 WHERE d2.species_common = d.species_common) as all_time_sessions,
+            (SELECT MIN(d3.first_detected_timestamp) FROM detections d3 WHERE d3.species_common = d.species_common) as earliest_ever_timestamp
         FROM detections d
         WHERE d.last_detected_timestamp >= ? AND d.last_detected_timestamp < ?
         GROUP BY d.species_common
@@ -566,6 +567,10 @@ def get_day_species_summary(detection_date: str, start_ts: int, end_ts: int) -> 
     """, (start_ts, end_ts))
 
     rows = [dict(row) for row in cursor.fetchall()]
+
+    for row in rows:
+        earliest = row.pop('earliest_ever_timestamp')
+        row['is_first_ever'] = earliest is not None and start_ts <= earliest < end_ts
 
     cursor.execute("""
         SELECT species_common, audio_filename FROM daily_best_clips WHERE detection_date = ?

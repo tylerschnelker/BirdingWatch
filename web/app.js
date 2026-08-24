@@ -111,7 +111,12 @@ function renderSpeciesDayCard(item, dateStr) {
     const confidencePercent = Math.round(item.best_confidence * 100);
     const lastSeen = formatDate(item.last_seen_at);
 
+    if (item.is_first_ever) {
+        card.classList.add('first-ever-card');
+    }
+
     card.innerHTML = `
+        ${item.is_first_ever ? `<div class="first-ever-banner">🎉 First time ever!</div>` : ''}
         <div class="card-header">
             ${createBirdImage(item.image_url, 'large').outerHTML}
             <div class="bird-info">

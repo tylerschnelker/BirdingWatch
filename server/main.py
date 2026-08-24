@@ -344,6 +344,18 @@ async def serve_index():
     return FileResponse(index_path)
 
 
+@app.get("/sw.js")
+async def serve_service_worker():
+    """
+    Serve the service worker from the root path (not /static/sw.js) so its
+    default scope covers the whole site. A service worker's default scope is
+    the directory of its own URL - registering it from under /static/ meant
+    it could only ever control requests already under /static/, never the
+    app's actual pages, silently making all of its caching logic inert.
+    """
+    return FileResponse(web_dir / "sw.js", media_type="application/javascript")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host=HOST, port=PORT)

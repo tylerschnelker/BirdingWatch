@@ -261,6 +261,22 @@ main {
     font-weight: 600;
 }
 
+.first-ever-card {
+    border: 2px solid #f4a300;
+    box-shadow: 0 2px 12px rgba(244, 163, 0, 0.25);
+}
+
+.first-ever-banner {
+    display: inline-block;
+    background: linear-gradient(135deg, #f4a300 0%, #ffb703 100%);
+    color: white;
+    font-weight: 700;
+    font-size: 0.8rem;
+    padding: 0.3rem 0.75rem;
+    border-radius: 20px;
+    margin-bottom: 0.75rem;
+}
+
 .visit-count-badge {
     display: inline-block;
     padding: 0.25rem 0.75rem;
