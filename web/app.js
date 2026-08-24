@@ -48,6 +48,34 @@ function formatDuration(minutes) {
     return `Visited for ${hours}h ${remainingMins}m`;
 }
 
+// Format a 'YYYY-MM-DD' string as "Today", "Yesterday", or "Mon, Jan 5"
+function formatDayLabel(dateStr, serverTodayStr) {
+    if (dateStr === serverTodayStr) return 'Today';
+
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+
+    const [ty, tm, td] = serverTodayStr.split('-').map(Number);
+    const yesterday = new Date(ty, tm - 1, td);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (date.getTime() === yesterday.getTime()) return 'Yesterday';
+
+    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+// Shift a 'YYYY-MM-DD' string by a number of days, parsed/formatted as local dates
+function shiftDateString(dateStr, deltaDays) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    date.setDate(date.getDate() + deltaDays);
+
+    const yy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+}
+
 // Create bird image element with fallback to silhouette
 function createBirdImage(imageUrl, size = 'large') {
     const img = document.createElement('div');
@@ -73,68 +101,63 @@ function createBirdImage(imageUrl, size = 'large') {
     return img;
 }
 
-// Render a single detection card
-function renderDetectionCard(detection) {
+// Render a day card for one species (aggregate of that day's visits)
+function renderSpeciesDayCard(item, dateStr) {
     const card = document.createElement('div');
-    card.className = 'detection-card';
-    card.dataset.id = detection.id;
-    
-    const confidencePercent = Math.round(detection.confidence * 100);
-    const formattedFirstDate = formatDate(detection.first_detected_at);
-    const formattedLastDate = formatDate(detection.last_detected_at);
-    const durationMinutes = calculateDurationMinutes(detection.first_detected_at, detection.last_detected_at);
-    const durationText = formatDuration(durationMinutes);
-    
-    // Build time info based on duration
-    let timeInfo = '';
-    if (durationMinutes <= 1) {
-        timeInfo = `<div class="detection-time"><span>🕐</span><span>${formattedLastDate}</span></div>`;
-    } else {
-        timeInfo = `
-            <div class="detection-time">
-                <span>🕐</span>
-                <span>First: ${formattedFirstDate}, Last: ${formattedLastDate}</span>
-            </div>
-            <div class="detection-duration">
-                <span>⏱️</span>
-                <span>${durationText}</span>
-            </div>
-        `;
-    }
-    
+    card.className = 'detection-card species-day-card';
+    card.dataset.species = item.species_common;
+    card.dataset.date = dateStr;
+
+    const confidencePercent = Math.round(item.best_confidence * 100);
+    const lastSeen = formatDate(item.last_seen_at);
+
     card.innerHTML = `
         <div class="card-header">
-            ${createBirdImage(detection.image_url, 'large').outerHTML}
+            ${createBirdImage(item.image_url, 'large').outerHTML}
             <div class="bird-info">
-                <div class="bird-name">${detection.species_common}</div>
-                <div class="bird-scientific">${detection.species_scientific}</div>
+                <div class="bird-name">${item.species_common}</div>
+                <div class="bird-scientific">${item.species_scientific}</div>
                 <span class="confidence-badge">Best confidence: ${confidencePercent}%</span>
-                <span class="detection-count-badge">🎵 ${detection.detection_count} call${detection.detection_count !== 1 ? 's' : ''} detected</span>
+                <span class="detection-count-badge">🎵 ${item.total_calls} call${item.total_calls !== 1 ? 's' : ''}</span>
+                <span class="visit-count-badge">📍 ${item.visit_count} visit${item.visit_count !== 1 ? 's' : ''}</span>
             </div>
         </div>
         <div class="card-meta">
-            ${timeInfo}
+            <div class="detection-time"><span>🕐</span><span>Last: ${lastSeen}</span></div>
         </div>
-        ${detection.wiki_summary ? `
-            <div class="wiki-summary collapsed" id="summary-${detection.id}">
-                ${detection.wiki_summary}
+        ${item.wiki_summary ? `
+            <div class="wiki-summary collapsed">
+                ${item.wiki_summary}
             </div>
-            <button class="expand-button" onclick="toggleSummary(${detection.id})">Read more</button>
+            <button class="expand-button summary-toggle">Read more</button>
         ` : ''}
         <div class="audio-player-container">
-            <audio controls src="/api/audio/${detection.audio_filename}"></audio>
-            <button class="delete-button" onclick="deleteDetection(${detection.id})" title="Delete detection">🗑️</button>
+            ${item.audio_filename
+                ? `<audio controls src="/api/audio/${item.audio_filename}" onerror="this.replaceWith(Object.assign(document.createElement('span'), {className: 'audio-unavailable-note', textContent: 'Audio no longer available'}))"></audio>`
+                : `<span class="audio-unavailable-note">Audio no longer available</span>`}
         </div>
+        <button class="expand-button visits-toggle">Show ${item.visit_count} visit${item.visit_count !== 1 ? 's' : ''}</button>
+        <div class="visits-list collapsed"></div>
     `;
-    
+
+    // Species names can contain characters (apostrophes, etc.) that aren't
+    // safe to interpolate into onclick="..."/id="..." strings (e.g. "Cooper's
+    // Hawk"), so wire these up directly instead.
+    card.querySelector('.visits-toggle').addEventListener('click', () => toggleVisits(item.species_common, dateStr, card));
+
+    const summaryToggle = card.querySelector('.summary-toggle');
+    if (summaryToggle) {
+        summaryToggle.addEventListener('click', () => toggleSummary(card));
+    }
+
     return card;
 }
 
-// Toggle wiki summary expansion
-function toggleSummary(id) {
-    const summary = document.getElementById(`summary-${id}`);
-    const button = summary.nextElementSibling;
-    
+// Toggle wiki summary expansion within a species day card
+function toggleSummary(card) {
+    const summary = card.querySelector('.wiki-summary');
+    const button = card.querySelector('.summary-toggle');
+
     if (summary.classList.contains('collapsed')) {
         summary.classList.remove('collapsed');
         button.textContent = 'Show less';
@@ -144,26 +167,94 @@ function toggleSummary(id) {
     }
 }
 
-// Delete a detection
-async function deleteDetection(detectionId) {
-    if (!confirm('Are you sure you want to delete this detection?')) {
+// Render a single visit row (one session) inside an expanded species day card
+function renderVisitRow(visit) {
+    const row = document.createElement('div');
+    row.className = 'visit-row';
+    row.dataset.id = visit.id;
+
+    const confidencePercent = Math.round(visit.confidence * 100);
+    const formattedFirstDate = formatDate(visit.first_detected_at);
+    const formattedLastDate = formatDate(visit.last_detected_at);
+    const durationMinutes = calculateDurationMinutes(visit.first_detected_at, visit.last_detected_at);
+    const durationText = formatDuration(durationMinutes);
+
+    let timeInfo = '';
+    if (durationMinutes <= 1) {
+        timeInfo = `<div class="detection-time"><span>🕐</span><span>${formattedLastDate}</span></div>`;
+    } else {
+        timeInfo = `
+            <div class="detection-time"><span>🕐</span><span>First: ${formattedFirstDate}, Last: ${formattedLastDate}</span></div>
+            <div class="detection-duration"><span>⏱️</span><span>${durationText}</span></div>
+        `;
+    }
+
+    row.innerHTML = `
+        <div class="card-meta">
+            ${timeInfo}
+            <span class="detection-count-badge">🎵 ${visit.detection_count} call${visit.detection_count !== 1 ? 's' : ''}</span>
+            <span class="confidence-badge">${confidencePercent}%</span>
+        </div>
+        <div class="audio-player-container">
+            ${visit.audio_available
+                ? `<audio controls src="/api/audio/${visit.audio_filename}" onerror="this.replaceWith(Object.assign(document.createElement('span'), {className: 'audio-unavailable-note', textContent: 'Audio no longer available'}))"></audio>`
+                : `<span class="audio-unavailable-note">Audio no longer available</span>`}
+            <button class="delete-button" onclick="deleteDetection(${visit.id})" title="Delete visit">🗑️</button>
+        </div>
+    `;
+
+    return row;
+}
+
+// Lazily fetch and expand/collapse the individual visits for one species+day
+async function toggleVisits(speciesCommon, dateStr, cardEl) {
+    const list = cardEl.querySelector('.visits-list');
+    const toggleBtn = cardEl.querySelector('.visits-toggle');
+
+    if (!list.classList.contains('collapsed')) {
+        list.classList.add('collapsed');
+        toggleBtn.textContent = toggleBtn.dataset.showLabel || toggleBtn.textContent.replace('Hide', 'Show');
         return;
     }
-    
+
+    if (!list.dataset.loaded) {
+        list.innerHTML = '<div class="loading">Loading visits...</div>';
+        list.classList.remove('collapsed');
+        try {
+            const response = await fetch(`/api/days/${dateStr}/species/${encodeURIComponent(speciesCommon)}`);
+            const data = await response.json();
+
+            list.innerHTML = '';
+            data.visits.forEach(visit => list.appendChild(renderVisitRow(visit)));
+            list.dataset.loaded = 'true';
+        } catch (error) {
+            console.error('Error loading visits:', error);
+            list.innerHTML = '<div class="empty-state-subtext">Error loading visits</div>';
+        }
+    } else {
+        list.classList.remove('collapsed');
+    }
+
+    toggleBtn.dataset.showLabel = toggleBtn.textContent;
+    toggleBtn.textContent = 'Hide visits';
+}
+
+// Delete a single visit (session)
+async function deleteDetection(detectionId) {
+    if (!confirm('Are you sure you want to delete this visit?')) {
+        return;
+    }
+
     try {
         const response = await fetch(`/api/detections/${detectionId}`, {
             method: 'DELETE'
         });
-        
+
         if (response.ok) {
-            // Remove the card from the DOM
-            const card = document.querySelector(`.detection-card[data-id="${detectionId}"]`);
-            if (card) {
-                card.style.opacity = '0';
-                card.style.transform = 'scale(0.9)';
-                setTimeout(() => card.remove(), 300);
-            }
-            // Refresh the species list if it's visible
+            // Reload the whole day view so the parent card's counts/audio stay accurate
+            await loadDayView();
+
+            // Refresh the species summary tab too, if it's visible
             const speciesTab = document.querySelector('.tab-button[data-tab="species"]');
             if (speciesTab.classList.contains('active')) {
                 loadSpecies();
@@ -218,32 +309,59 @@ function renderSpeciesItem(species) {
     return item;
 }
 
-// Fetch and render detections
-async function loadDetections() {
-    const container = document.getElementById('detections-container');
-    
+// Server-anchored date state for day navigation
+let currentViewedDate = null;
+let serverTodayDate = null;
+
+// Fetch the server's local "today" once at startup, so day navigation is
+// anchored to the server's timezone rather than the viewing browser's.
+async function initToday() {
     try {
-        const response = await fetch('/api/detections?limit=50');
-        const detections = await response.json();
-        
+        const response = await fetch('/api/today');
+        const data = await response.json();
+        serverTodayDate = data.date;
+        currentViewedDate = data.date;
+    } catch (error) {
+        console.error('Error fetching server date, falling back to browser date:', error);
+        const now = new Date();
+        const fallback = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        serverTodayDate = fallback;
+        currentViewedDate = fallback;
+    }
+}
+
+// Fetch and render the day-grouped, species-grouped feed for currentViewedDate
+async function loadDayView() {
+    const container = document.getElementById('detections-container');
+    const label = document.getElementById('current-date-label');
+    const nextBtn = document.getElementById('next-day-btn');
+
+    if (label) label.textContent = formatDayLabel(currentViewedDate, serverTodayDate);
+    if (nextBtn) nextBtn.disabled = currentViewedDate === serverTodayDate;
+
+    try {
+        const response = await fetch(`/api/days/${currentViewedDate}`);
+        const data = await response.json();
+
         container.innerHTML = '';
-        
-        if (detections.length === 0) {
+
+        if (!data.species || data.species.length === 0) {
+            const dayLabel = formatDayLabel(currentViewedDate, serverTodayDate);
             container.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon">🐦</div>
-                    <div class="empty-state-text">No detections yet</div>
+                    <div class="empty-state-text">No detections ${dayLabel === 'Today' ? 'yet' : 'on this day'}</div>
                     <div class="empty-state-subtext">Bird calls will appear here once detected</div>
                 </div>
             `;
             return;
         }
-        
-        detections.forEach(detection => {
-            container.appendChild(renderDetectionCard(detection));
+
+        data.species.forEach(item => {
+            container.appendChild(renderSpeciesDayCard(item, currentViewedDate));
         });
     } catch (error) {
-        console.error('Error loading detections:', error);
+        console.error('Error loading day view:', error);
         container.innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-text">Error loading detections</div>
@@ -251,6 +369,23 @@ async function loadDetections() {
             </div>
         `;
     }
+}
+
+// Wire up the prev/next day navigation buttons
+function setupDateNav() {
+    const prevBtn = document.getElementById('prev-day-btn');
+    const nextBtn = document.getElementById('next-day-btn');
+
+    prevBtn.addEventListener('click', () => {
+        currentViewedDate = shiftDateString(currentViewedDate, -1);
+        loadDayView();
+    });
+
+    nextBtn.addEventListener('click', () => {
+        if (currentViewedDate === serverTodayDate) return;
+        currentViewedDate = shiftDateString(currentViewedDate, 1);
+        loadDayView();
+    });
 }
 
 // Fetch and render species summary
@@ -310,16 +445,21 @@ function setupTabs() {
 }
 
 // Initialize app
-function init() {
+async function init() {
     setupTabs();
-    loadDetections();
+    setupDateNav();
+    await initToday();
+    loadDayView();
     loadSpecies();
-    
-    // Auto-refresh every 30 seconds
+
+    // Auto-refresh every 30 seconds. Only the "today" view can change, so
+    // don't bother re-fetching a past day the user is browsing.
     setInterval(() => {
         const activeTab = document.querySelector('.tab-button.active').getAttribute('data-tab');
         if (activeTab === 'recent') {
-            loadDetections();
+            if (currentViewedDate === serverTodayDate) {
+                loadDayView();
+            }
         } else {
             loadSpecies();
         }

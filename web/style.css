@@ -137,6 +137,48 @@ main {
     font-style: italic;
 }
 
+/* Date navigation */
+.date-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    background: white;
+    border-radius: 10px;
+    padding: 0.5rem;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+.date-nav-button {
+    background: #f0f4f2;
+    border: none;
+    color: #2d6a4f;
+    font-size: 1.1rem;
+    font-weight: 700;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.date-nav-button:hover:not(:disabled) {
+    background-color: #d8ece2;
+}
+
+.date-nav-button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.date-nav-label {
+    min-width: 8rem;
+    text-align: center;
+    font-weight: 600;
+    color: #2d3436;
+}
+
 /* Detection cards */
 .detections-feed {
     display: flex;
@@ -214,6 +256,16 @@ main {
     padding: 0.25rem 0.75rem;
     background-color: #40916c;
     color: white;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.visit-count-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    background-color: #95d5b2;
+    color: #1b4332;
     border-radius: 20px;
     font-size: 0.75rem;
     font-weight: 600;
@@ -303,6 +355,45 @@ main {
 
 .audio-player-container .delete-button {
     flex-shrink: 0;
+}
+
+.audio-unavailable-note {
+    font-size: 0.8rem;
+    font-style: italic;
+    color: #b2bec3;
+}
+
+/* Visits list (expanded view within a species-day-card) */
+.visits-toggle {
+    margin-top: 0.5rem;
+}
+
+.visits-list {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #f0f0f0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.visits-list.collapsed {
+    display: none;
+}
+
+.visit-row {
+    background-color: #f8faf9;
+    border-left: 3px solid #74c69d;
+    border-radius: 6px;
+    padding: 0.75rem;
+}
+
+.visit-row .card-meta {
+    margin-bottom: 0.5rem;
+}
+
+.visit-row .audio-player-container {
+    margin-top: 0.5rem;
 }
 
 /* Species list */

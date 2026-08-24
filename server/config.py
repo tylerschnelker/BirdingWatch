@@ -26,6 +26,12 @@ PORT = int(os.getenv("PORT", "8000"))
 # BirdNET confidence threshold - only save detections above this score
 BIRDNET_CONFIDENCE_THRESHOLD = float(os.getenv("BIRDNET_CONFIDENCE_THRESHOLD", "0.5"))
 
+# Stricter confidence threshold required for a species heard only once in an
+# uploaded clip with no existing active session (i.e. nothing corroborating it).
+# Repeated calls in the same clip, or calls that extend an already-confirmed
+# session, only need to clear BIRDNET_CONFIDENCE_THRESHOLD.
+SINGLETON_CONFIDENCE_THRESHOLD = float(os.getenv("SINGLETON_CONFIDENCE_THRESHOLD", "0.85"))
+
 # Location coordinates for BirdNET location filtering (optional)
 # Fill in your latitude and longitude for better accuracy
 LAT = os.getenv("LAT")

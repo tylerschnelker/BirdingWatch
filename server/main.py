@@ -8,13 +8,18 @@ from fastapi import FastAPI, UploadFile, File, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import Header
 import uuid
 import os
 
-from config import UPLOAD_DIR, DATABASE_PATH, HOST, PORT, API_KEY, SESSION_TIMEOUT_MINUTES
-from database import init_db, insert_session, find_active_session, update_session, update_session_with_count, get_recent_detections, get_species_summary, get_detection_by_id, delete_detection
+from config import UPLOAD_DIR, DATABASE_PATH, HOST, PORT, API_KEY, SESSION_TIMEOUT_MINUTES, SINGLETON_CONFIDENCE_THRESHOLD
+from database import (
+    init_db, insert_session, find_active_session, update_session, update_session_with_count,
+    get_recent_detections, get_species_summary, get_detection_by_id, delete_detection,
+    get_daily_best, insert_daily_best, update_daily_best, count_daily_best_references,
+    get_daily_best_by_filename, delete_daily_best, get_day_species_summary, get_day_species_visits
+)
 from analyzer import analyze_audio, fetch_bird_info
 
 # Initialize FastAPI app
@@ -81,33 +86,46 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
             species = detection['species_common']
             species_detections[species].append(detection)
         
-        now = datetime.now().isoformat()
+        now_dt = datetime.now()
+        now = now_dt.isoformat()
+        today_date_str = now_dt.strftime('%Y-%m-%d')
         total_sessions_updated = 0
-        
+        file_claimed_as_daily_best = False
+
         # Process each species group
         for species, species_group in species_detections.items():
             # Calculate aggregate stats for this species in this file
             detection_count = len(species_group)
             max_confidence = max(d['confidence'] for d in species_group)
             scientific_name = species_group[0]['species_scientific']
-            
+
             # Check if there's an active session for this species
             active_session = find_active_session(species, SESSION_TIMEOUT_MINUTES)
-            
+
+            # A species heard only once in this clip with no existing session to
+            # corroborate it is more likely to be a misidentified noise (door
+            # squeak, siren, etc.) than a real repeated call. Require a higher
+            # confidence bar in that case; repeats in the same clip, or calls
+            # that extend an already-confirmed session, use the normal threshold.
+            if not active_session and detection_count == 1 and max_confidence < SINGLETON_CONFIDENCE_THRESHOLD:
+                print(f"Held back low-confidence singleton: {species} (confidence: {max_confidence:.2f})")
+                continue
+
             if active_session:
                 # Update existing session: increment count by number of detections in this file
                 update_session_with_count(
-                    active_session['id'], 
-                    max_confidence, 
-                    now, 
+                    active_session['id'],
+                    max_confidence,
+                    now,
                     detection_count,
                     filename
                 )
+                session_id = active_session['id']
                 print(f"Updated session for {species} (count: {active_session['detection_count'] + detection_count}, added {detection_count} calls)")
             else:
                 # Create new session
-                bird_info = fetch_bird_info(species)
-                
+                bird_info = fetch_bird_info(species, scientific_name)
+
                 detection_record = {
                     'species_common': species,
                     'species_scientific': scientific_name,
@@ -119,12 +137,42 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
                     'image_url': bird_info['image_url'],
                     'wiki_summary': bird_info['wiki_summary']
                 }
-                
+
                 session_id = insert_session(detection_record)
                 print(f"New session started for {species} (ID: {session_id}, calls: {detection_count})")
-            
+
             total_sessions_updated += 1
-        
+
+            # Only the single highest-confidence clip per species per day is kept
+            # on disk. Decide whether this upload's file beats (or establishes)
+            # today's kept clip for this species; if so, claim it and retire the
+            # previous one. Otherwise this file gets nothing for this species.
+            existing_best = get_daily_best(species, today_date_str)
+            if existing_best is None:
+                insert_daily_best(species, today_date_str, filename, max_confidence, session_id)
+                file_claimed_as_daily_best = True
+                print(f"New daily-best clip for {species} on {today_date_str}: {filename} ({max_confidence:.2f})")
+            elif max_confidence > existing_best['confidence']:
+                old_filename = existing_best['audio_filename']
+                update_daily_best(existing_best['id'], filename, max_confidence, session_id)
+                file_claimed_as_daily_best = True
+                print(f"Daily-best clip for {species} on {today_date_str} updated: {filename} ({max_confidence:.2f} > {existing_best['confidence']:.2f})")
+                if old_filename != filename and count_daily_best_references(old_filename) == 0:
+                    try:
+                        (UPLOAD_DIR / old_filename).unlink()
+                        print(f"Deleted superseded clip {old_filename}")
+                    except OSError as e:
+                        print(f"Could not delete superseded clip {old_filename}: {e}")
+
+        # If no species detected in this file ended up as anyone's new daily-best
+        # clip, we don't need to keep the file on disk.
+        if not file_claimed_as_daily_best:
+            try:
+                os.remove(filepath)
+                print(f"Deleted {filename}: not the daily-best clip for any detected species")
+            except OSError as e:
+                print(f"Could not delete unclaimed clip {filename}: {e}")
+
         return JSONResponse({
             "status": "ok",
             "detections_found": len(detections),
@@ -195,20 +243,90 @@ async def get_detection(detection_id: int):
 @app.delete("/api/detections/{detection_id}")
 async def delete_detection_endpoint(detection_id: int):
     """
-    Delete a detection by ID.
+    Delete a detection (visit) by ID. If its audio clip was the retained
+    daily-best clip for that species/day, retire that pointer too and delete
+    the file if nothing else still references it.
     """
-    deleted = delete_detection(detection_id)
-    
-    if not deleted:
+    detection = get_detection_by_id(detection_id)
+
+    if detection is None:
         return JSONResponse({
             "status": "error",
             "message": "Detection not found"
         }, status_code=404)
-    
+
+    delete_detection(detection_id)
+
+    best = get_daily_best_by_filename(detection['audio_filename'])
+    if best is not None:
+        delete_daily_best(best['id'])
+        if count_daily_best_references(detection['audio_filename']) == 0:
+            try:
+                (UPLOAD_DIR / detection['audio_filename']).unlink()
+            except OSError as e:
+                print(f"Could not delete clip {detection['audio_filename']} after visit delete: {e}")
+
     return JSONResponse({
         "status": "ok",
         "message": "Detection deleted"
     })
+
+
+@app.get("/api/today")
+async def get_today():
+    """
+    Server's local date, so the frontend can anchor day-navigation to the
+    server's timezone rather than the viewing browser's.
+    """
+    return JSONResponse({"date": datetime.now().strftime('%Y-%m-%d')})
+
+
+def _parse_local_day(date_str: str):
+    """
+    Parse a 'YYYY-MM-DD' string into local-day Unix timestamp bounds
+    [start_ts, end_ts). Returns None if the string can't be parsed.
+    """
+    try:
+        day_start = datetime.strptime(date_str, '%Y-%m-%d')
+    except ValueError:
+        return None
+    start_ts = int(day_start.timestamp())
+    end_ts = int((day_start + timedelta(days=1)).timestamp())
+    return start_ts, end_ts
+
+
+@app.get("/api/days/{date}")
+async def get_day_summary(date: str):
+    """
+    Get a species-grouped summary of detections for one local day.
+    """
+    bounds = _parse_local_day(date)
+    if bounds is None:
+        return JSONResponse({
+            "status": "error",
+            "message": "Invalid date format, expected YYYY-MM-DD"
+        }, status_code=400)
+
+    start_ts, end_ts = bounds
+    species = get_day_species_summary(date, start_ts, end_ts)
+    return JSONResponse({"date": date, "species": species})
+
+
+@app.get("/api/days/{date}/species/{species_common}")
+async def get_day_species_visits_endpoint(date: str, species_common: str):
+    """
+    Get the individual visits for one species on one local day.
+    """
+    bounds = _parse_local_day(date)
+    if bounds is None:
+        return JSONResponse({
+            "status": "error",
+            "message": "Invalid date format, expected YYYY-MM-DD"
+        }, status_code=400)
+
+    start_ts, end_ts = bounds
+    visits = get_day_species_visits(species_common, date, start_ts, end_ts)
+    return JSONResponse({"species_common": species_common, "date": date, "visits": visits})
 
 
 # Mount static files (web UI)
