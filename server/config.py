@@ -54,3 +54,7 @@ SESSION_TIMEOUT_MINUTES = int(os.getenv("SESSION_TIMEOUT_MINUTES", "10"))
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY")
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY")
 VAPID_CLAIM_EMAIL = os.getenv("VAPID_CLAIM_EMAIL")
+
+# If the Pi hasn't shown signs of recording (an upload, or a heartbeat
+# reporting fresh mic audio) for this long, push a "recorder offline" alert.
+RECORDER_OFFLINE_MINUTES = int(os.getenv("RECORDER_OFFLINE_MINUTES", "30"))

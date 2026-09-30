@@ -45,14 +45,23 @@ h1 {
 }
 
 .live-indicator {
-    position: absolute;
-    top: 0;
-    right: 0;
     display: flex;
+    justify-content: center;
     align-items: center;
     gap: 0.5rem;
+    margin-top: 0.5rem;
     font-size: 0.875rem;
     font-weight: 600;
+}
+
+/* Wide enough for the status to sit top-right without colliding with the title */
+@media (min-width: 900px) {
+    .live-indicator {
+        position: absolute;
+        top: 0;
+        right: 0;
+        margin-top: 0;
+    }
 }
 
 .live-dot {
@@ -77,6 +86,14 @@ h1 {
 .live-text {
     color: #74c69d;
 }
+
+/* Recorder status states (see loadRecorderStatus in app.js) */
+.live-indicator.status-warn .live-dot { background-color: #f4c95d; }
+.live-indicator.status-warn .live-text { color: #f4c95d; }
+.live-indicator.status-offline .live-dot { background-color: #ef8a80; animation: none; }
+.live-indicator.status-offline .live-text { color: #ef8a80; }
+.live-indicator.status-unknown .live-dot { background-color: rgba(255, 255, 255, 0.6); animation: none; }
+.live-indicator.status-unknown .live-text { color: rgba(255, 255, 255, 0.8); }
 
 .notify-toggle {
     margin-top: 0.75rem;

@@ -1,0 +1,6 @@
+[Unit]
+Description=BirdWatch network watchdog (recover dropped Wi-Fi)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /home/pi/BirdingWatch/pi/system/birdwatch-netwatch.sh

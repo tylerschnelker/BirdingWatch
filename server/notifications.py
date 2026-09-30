@@ -1,5 +1,5 @@
 """
-Web Push notification sending for first-ever species detections.
+Web Push notification sending (first-ever species, recorder offline alerts).
 """
 
 import json
@@ -17,6 +17,16 @@ def send_first_ever_notification(species_common: str, species_scientific: str) -
     Best-effort and never raises: a failed or unconfigured push must never
     fail the /upload-audio request or affect detection logging.
     """
+    send_push(
+        "First time ever!",
+        f"{species_common} was just detected in your backyard for the first time."
+    )
+
+
+def send_push(title: str, body: str, url: str = "/") -> None:
+    """
+    Push a notification to every subscribed browser. Best-effort, never raises.
+    """
     if not VAPID_PRIVATE_KEY or not VAPID_CLAIM_EMAIL:
         return  # Push not configured on this deploy yet - silently skip.
 
@@ -24,11 +34,7 @@ def send_first_ever_notification(species_common: str, species_scientific: str) -
     if not subscriptions:
         return
 
-    payload = json.dumps({
-        "title": "First time ever!",
-        "body": f"{species_common} was just detected in your backyard for the first time.",
-        "url": "/"
-    })
+    payload = json.dumps({"title": title, "body": body, "url": url})
 
     for sub in subscriptions:
         subscription_info = {

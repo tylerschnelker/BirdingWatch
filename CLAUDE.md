@@ -13,7 +13,9 @@ server running both the API and the web UI via one FastAPI process + systemd).
 Raspberry Pi (pi/recorder.py)
   -> USB mic -> RMS-based voice-activity trigger -> saves .wav locally
   -> POSTs to {DESKTOP_SERVER_URL}/upload-audio with x-api-key header
-  -> deletes local file after upload (success or failure, always cleaned up)
+  -> clips queue in a local outbox; a background thread uploads oldest-first and deletes
+     only once the server accepts (survives network outages - see "Recorder reliability")
+  -> POSTs /api/heartbeat every 60s so the server can alert when the recorder goes dark
 
 Cloud server (server/main.py, FastAPI)
   -> /upload-audio: saves .wav, runs analyzer.analyze_audio() (BirdNET),
@@ -154,6 +156,44 @@ parenthetical/subspecies-qualified names.
 **Known limitations carried forward**: the daily-best read-then-write isn't transactional
 (matches the pre-existing `find_active_session` race, acceptable at single-Pi scale); a session
 that straddles midnight is bucketed by `last_detected_timestamp` (the day it *ended*), not started.
+
+## Recorder reliability: outbox, heartbeat, offline alerts (2026-09-29)
+
+The Pi went dark twice (Sep 25, Sep 29) with no alert. Persistent journal logs showed two
+independent causes, neither a full freeze: (1) the USB mic briefly disconnected (`usb 1-2: USB
+disconnect`), after which the old recorder's blocking `audio_queue.get()` waited forever while
+systemd still reported it "active"; (2) weak Wi-Fi (~51-55%) with the Pi flapping between two mesh
+APs ~170 times in 8h until DNS/connectivity died, so it was unreachable by SSH/mDNS. Also found:
+nginx's default 1 MB `client_max_body_size` had been 413-rejecting every clip over ~12s (~13k
+rejected requests in the logs) - the longest, often best, recordings.
+
+- **Recorder** (`pi/recorder.py`): recording and uploading are decoupled. The audio loop only saves
+  clips (atomic `.part` → rename) into `/home/pi/birdwatch_recordings` (the outbox); a daemon
+  uploader thread sends them oldest-first and deletes only on 200 (or a permanent 400/413/415/422).
+  Network errors keep the file and back off up to 5 min. `OUTBOX_MAX_MB` (default 2000) caps the
+  outbox, dropping oldest. `get(timeout=10)` + `os._exit(1)` turns a mic stall into a systemd
+  restart (`Restart=always`) with a fresh PortAudio device list. stdout is line-buffered so prints
+  reach `journalctl -u birdwatch-recorder`.
+- **Recorded time vs arrival time**: backfilled clips arrive late, so `main.py`'s
+  `recorded_time_for()` dates detections from the `birdcall_YYYYMMDD_HHMMSS` filename (Pi and
+  server share a timezone; falls back to now if missing, >7 days old, or in the future).
+  `find_active_session`/`insert_session`/`update_session_with_count` take that timestamp;
+  `last_detected_timestamp` only moves forward.
+- **Heartbeat / status / alerts**: the Pi POSTs `/api/heartbeat` every `HEARTBEAT_SECONDS` (60)
+  with `pending_clips` and `seconds_since_audio`. `recorder_state` in `main.py` is in-memory only.
+  `watch_recorder_health()` pushes "Recorder offline" (distinguishing "no contact" from "online but
+  mic silent") after `RECORDER_OFFLINE_MINUTES` (30) and "back online" on recovery, reusing the web
+  push subscriptions (`notifications.send_push`). `/api/recorder-status` drives the header status
+  indicator in the web UI (it used to be a hard-coded "Live" dot).
+- **Pi system config (manual, not deployed by CI)**: `pi/system/birdwatch-netwatch.{sh,service,timer}`
+  escalates on lost connectivity (bounce radio → restart NetworkManager → reboot if up >30 min).
+  Also applied by hand on the Pi: persistent journald (`/etc/systemd/journald.conf.d/99-persistent.conf`
+  overriding Raspberry Pi OS's `40-rpi-volatile-storage.conf`, capped at 200M), Wi-Fi power save off
+  (`/etc/NetworkManager/conf.d/wifi-powersave-off.conf`), hardware watchdog
+  (`/etc/systemd/system.conf.d/watchdog.conf`, `RuntimeWatchdogSec=15`). `pi` needs a sudo password,
+  so none of this can be changed remotely without the user.
+- **nginx** on the droplet (`/etc/nginx/sites-available/birdwatch`) is not in the repo; it needs
+  `client_max_body_size` raised above the largest clip (~1.3 MB for 15s at 44.1 kHz).
 
 ## Config / environment
 

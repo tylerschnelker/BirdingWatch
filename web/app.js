@@ -539,6 +539,56 @@ async function toggleNotifications(btn) {
     }
 }
 
+function formatAgo(seconds) {
+    if (seconds < 90) return 'just now';
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 90) return `${minutes} min ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 36) return `${hours} hr ago`;
+    return `${Math.round(hours / 24)} days ago`;
+}
+
+// Header indicator driven by the Pi's heartbeats/uploads, so it's obvious at a
+// glance when the recorder has gone dark instead of the feed just looking quiet.
+async function loadRecorderStatus() {
+    const el = document.getElementById('recorder-status');
+    const textEl = document.getElementById('recorder-status-text');
+    if (!el || !textEl) return;
+
+    let state = 'unknown';
+    let text = 'Recorder status unknown';
+    try {
+        const response = await fetch('/api/recorder-status');
+        if (response.ok) {
+            const s = await response.json();
+            const recordingAgo = s.seconds_since_recording;
+            const contactAgo = s.seconds_since_contact;
+
+            if (recordingAgo !== null && recordingAgo < 180) {
+                state = 'ok';
+                text = s.pending_clips > 0 ? `Recording · catching up (${s.pending_clips})` : 'Recording';
+            } else if (contactAgo !== null && contactAgo < 180) {
+                state = 'warn';
+                text = 'Online · mic not capturing';
+            } else if (contactAgo === null && recordingAgo === null) {
+                state = 'unknown';
+                text = 'Waiting for recorder…';
+            } else {
+                const lastSeen = Math.min(...[contactAgo, recordingAgo].filter(v => v !== null));
+                state = lastSeen < s.offline_after_seconds ? 'warn' : 'offline';
+                text = state === 'warn'
+                    ? `Recorder last heard ${formatAgo(lastSeen)}`
+                    : `Recorder offline · last heard ${formatAgo(lastSeen)}`;
+            }
+        }
+    } catch (e) {
+        console.error('Error loading recorder status:', e);
+    }
+
+    el.className = `live-indicator status-${state}`;
+    textEl.textContent = text;
+}
+
 // Initialize app
 async function init() {
     setupTabs();
@@ -547,10 +597,12 @@ async function init() {
     loadDayView();
     loadSpecies();
     initPushUI();
+    loadRecorderStatus();
 
     // Auto-refresh every 30 seconds. Only the "today" view can change, so
     // don't bother re-fetching a past day the user is browsing.
     setInterval(() => {
+        loadRecorderStatus();
         const activeTab = document.querySelector('.tab-button.active').getAttribute('data-tab');
         if (activeTab === 'recent') {
             if (currentViewedDate === serverTodayDate) {

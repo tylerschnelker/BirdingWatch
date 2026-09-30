@@ -24,3 +24,12 @@ MAX_RECORDING_SECONDS = int(os.getenv("MAX_RECORDING_SECONDS", "15"))
 
 # Server endpoint for uploading audio
 UPLOAD_ENDPOINT = os.getenv("UPLOAD_ENDPOINT", "/upload-audio")
+
+# Max disk space for clips waiting to upload (e.g. during a network outage).
+# Oldest clips are dropped past this. ~1.3 MB per 15s clip, so 2000 MB holds
+# well over a day of continuous activity.
+OUTBOX_MAX_MB = int(os.getenv("OUTBOX_MAX_MB", "2000"))
+
+# How often the Pi checks in with the server so it can tell "alive but quiet"
+# apart from "offline" and alert when the recorder goes dark.
+HEARTBEAT_SECONDS = int(os.getenv("HEARTBEAT_SECONDS", "60"))

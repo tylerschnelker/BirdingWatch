@@ -4,7 +4,7 @@ Receives audio uploads from Pi, analyzes with BirdNET, stores in SQLite,
 and serves a web UI for viewing detections.
 """
 
-from fastapi import FastAPI, UploadFile, File, Query, Request
+from fastapi import FastAPI, UploadFile, File, Query, Request, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
@@ -12,10 +12,13 @@ from datetime import datetime, timedelta
 from fastapi import Header
 import uuid
 import os
+import re
+import time
+import asyncio
 
 from config import (
     UPLOAD_DIR, DATABASE_PATH, HOST, PORT, API_KEY, SESSION_TIMEOUT_MINUTES,
-    SINGLETON_CONFIDENCE_THRESHOLD, VAPID_PUBLIC_KEY
+    SINGLETON_CONFIDENCE_THRESHOLD, VAPID_PUBLIC_KEY, RECORDER_OFFLINE_MINUTES
 )
 from database import (
     init_db, insert_session, find_active_session, update_session, update_session_with_count,
@@ -25,10 +28,50 @@ from database import (
     count_all_sessions_for_species, add_push_subscription, remove_push_subscription
 )
 from analyzer import analyze_audio, fetch_bird_info
-from notifications import send_first_ever_notification
+from notifications import send_first_ever_notification, send_push
 
 # Initialize FastAPI app
 app = FastAPI(title="BirdWatch", description="Backyard bird tracking system")
+
+# Recorder health, in memory only (resets on server restart - the Pi re-reports
+# within a minute). "last_recording_evidence" is the last time we had proof the
+# Pi was actually capturing audio: an upload, or a heartbeat whose mic audio was
+# fresh. A heartbeat alone only proves the Pi is online.
+recorder_state = {
+    "last_contact": None,
+    "last_recording_evidence": None,
+    "pending_clips": None,
+    "offline_alert_sent": False,
+    "started_at": time.time(),
+}
+
+# The Pi names clips birdcall_YYYYMMDD_HHMMSS[_N].wav in its local time (same
+# timezone as this server). Clips buffered on the Pi during an outage arrive
+# late, so we date detections by this rather than by arrival time.
+CLIP_TIME_RE = re.compile(r"birdcall_(\d{8}_\d{6})")
+MAX_CLIP_AGE_SECONDS = 7 * 24 * 3600
+
+
+def recorded_time_for(filename: str) -> datetime:
+    """When the clip was recorded, falling back to now if the name doesn't say or looks wrong."""
+    now = datetime.now()
+    match = CLIP_TIME_RE.search(filename)
+    if match:
+        try:
+            recorded = datetime.strptime(match.group(1), "%Y%m%d_%H%M%S")
+            age = (now - recorded).total_seconds()
+            if -300 <= age <= MAX_CLIP_AGE_SECONDS:
+                return min(recorded, now)
+        except ValueError:
+            pass
+    return now
+
+
+def note_recorder_activity(recording: bool) -> None:
+    now = time.time()
+    recorder_state["last_contact"] = now
+    if recording:
+        recorder_state["last_recording_evidence"] = now
 
 
 @app.on_event("startup")
@@ -46,6 +89,39 @@ async def startup_event():
     print(f"Upload directory: {UPLOAD_DIR}")
     print(f"Database: {DATABASE_PATH}")
 
+    asyncio.create_task(watch_recorder_health())
+
+
+async def watch_recorder_health():
+    """
+    Push an alert when the recorder goes quiet for RECORDER_OFFLINE_MINUTES,
+    and another when it comes back. Right after a server restart we have no
+    history, so the clock starts from startup rather than alerting immediately.
+    """
+    threshold = RECORDER_OFFLINE_MINUTES * 60
+    while True:
+        await asyncio.sleep(60)
+        try:
+            evidence = recorder_state["last_recording_evidence"] or recorder_state["started_at"]
+            silent_for = time.time() - evidence
+
+            if silent_for > threshold and not recorder_state["offline_alert_sent"]:
+                recorder_state["offline_alert_sent"] = True
+                contact = recorder_state["last_contact"]
+                if contact and time.time() - contact < 5 * 60:
+                    body = "The Pi is online but its microphone isn't capturing audio. Check the USB mic."
+                else:
+                    body = f"No contact from the backyard recorder for over {RECORDER_OFFLINE_MINUTES} minutes. It may be off or off Wi-Fi."
+                print(f"Recorder offline alert: {body}")
+                await asyncio.to_thread(send_push, "Recorder offline", body)
+
+            elif silent_for <= threshold and recorder_state["offline_alert_sent"]:
+                recorder_state["offline_alert_sent"] = False
+                print("Recorder back online")
+                await asyncio.to_thread(send_push, "Recorder back online", "The backyard recorder is capturing audio again.")
+        except Exception as e:
+            print(f"Recorder health check error: {e}")
+
 
 @app.post("/upload-audio")
 async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(None)):
@@ -55,6 +131,7 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
     Receive audio file from Raspberry Pi, analyze with BirdNET,
     and store detections in database.
     """
+    note_recorder_activity(recording=True)
     try:
         # Generate unique filename if none provided
         filename = file.filename or f"{uuid.uuid4()}.wav"
@@ -91,8 +168,11 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
             species = detection['species_common']
             species_detections[species].append(detection)
         
-        now_dt = datetime.now()
+        # "now" here means when the clip was recorded, which is earlier than
+        # arrival for clips the Pi buffered while offline.
+        now_dt = recorded_time_for(filename)
         now = now_dt.isoformat()
+        now_ts = int(now_dt.timestamp())
         today_date_str = now_dt.strftime('%Y-%m-%d')
         total_sessions_updated = 0
         file_claimed_as_daily_best = False
@@ -105,7 +185,7 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
             scientific_name = species_group[0]['species_scientific']
 
             # Check if there's an active session for this species
-            active_session = find_active_session(species, SESSION_TIMEOUT_MINUTES)
+            active_session = find_active_session(species, SESSION_TIMEOUT_MINUTES, now_ts)
 
             # A species heard only once in this clip with no existing session to
             # corroborate it is more likely to be a misidentified noise (door
@@ -123,7 +203,8 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
                     max_confidence,
                     now,
                     detection_count,
-                    filename
+                    filename,
+                    now_ts
                 )
                 session_id = active_session['id']
                 print(f"Updated session for {species} (count: {active_session['detection_count'] + detection_count}, added {detection_count} calls)")
@@ -143,7 +224,7 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
                     'wiki_summary': bird_info['wiki_summary']
                 }
 
-                session_id = insert_session(detection_record)
+                session_id = insert_session(detection_record, now_ts)
                 print(f"New session started for {species} (ID: {session_id}, calls: {detection_count})")
 
                 if count_all_sessions_for_species(species) == 1:
@@ -193,6 +274,32 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
             "status": "error",
             "message": str(e)
         }, status_code=500)
+
+
+@app.post("/api/heartbeat")
+async def heartbeat(payload: dict = Body(default={}), x_api_key: str = Header(None)):
+    """Periodic check-in from the Pi, sent even when nothing is being recorded."""
+    if x_api_key != API_KEY:
+        return JSONResponse({"status": "error", "message": "Unauthorized"}, status_code=401)
+
+    seconds_since_audio = payload.get("seconds_since_audio")
+    mic_ok = isinstance(seconds_since_audio, (int, float)) and seconds_since_audio < 60
+    note_recorder_activity(recording=mic_ok)
+    recorder_state["pending_clips"] = payload.get("pending_clips")
+    return {"status": "ok"}
+
+
+@app.get("/api/recorder-status")
+async def recorder_status():
+    now = time.time()
+    contact = recorder_state["last_contact"]
+    evidence = recorder_state["last_recording_evidence"]
+    return {
+        "seconds_since_contact": round(now - contact) if contact else None,
+        "seconds_since_recording": round(now - evidence) if evidence else None,
+        "pending_clips": recorder_state["pending_clips"],
+        "offline_after_seconds": RECORDER_OFFLINE_MINUTES * 60,
+    }
 
 
 @app.get("/api/detections")

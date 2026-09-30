@@ -106,7 +106,7 @@ def init_db():
     print(f"Database initialized at {DATABASE_PATH}")
 
 
-def insert_session(detection: Dict) -> int:
+def insert_session(detection: Dict, detected_timestamp: Optional[int] = None) -> int:
     """
     Insert a new session into the database.
     
@@ -114,6 +114,8 @@ def insert_session(detection: Dict) -> int:
         detection: Dictionary with keys: species_common, species_scientific,
                    confidence, audio_filename, first_detected_at, last_detected_at,
                    detection_count (optional, defaults to 1), image_url, wiki_summary
+        detected_timestamp: Unix time the clip was recorded (defaults to now).
+                   Differs from now for clips the Pi buffered during an outage.
     
     Returns:
         The ID of the newly inserted row
@@ -123,7 +125,7 @@ def insert_session(detection: Dict) -> int:
     cursor = conn.cursor()
     
     detection_count = detection.get('detection_count', 1)
-    current_timestamp = int(time.time())
+    current_timestamp = detected_timestamp if detected_timestamp is not None else int(time.time())
     
     cursor.execute("""
         INSERT INTO detections (
@@ -267,16 +269,18 @@ def delete_detection(detection_id: int) -> bool:
     return deleted
 
 
-def find_active_session(species_common: str, timeout_minutes: int) -> Optional[Dict]:
+def find_active_session(species_common: str, timeout_minutes: int,
+                        at_timestamp: Optional[int] = None) -> Optional[Dict]:
     """
     Find an active session for a species within the timeout window.
     
     A session is considered active if its last_detected_at is within
-    timeout_minutes of the current time.
+    timeout_minutes of at_timestamp (the clip's recording time; defaults to now).
     
     Args:
         species_common: The common name of the species
         timeout_minutes: Minutes to look back for an active session
+        at_timestamp: Unix time to measure the window from (defaults to now)
     
     Returns:
         Session dictionary if found, None otherwise
@@ -287,7 +291,7 @@ def find_active_session(species_common: str, timeout_minutes: int) -> Optional[D
     cursor = conn.cursor()
     
     # Calculate cutoff time as Unix timestamp (seconds since epoch)
-    current_time = int(time.time())
+    current_time = at_timestamp if at_timestamp is not None else int(time.time())
     cutoff_seconds = current_time - (timeout_minutes * 60)
     
     # Look for a session within the timeout window using integer comparison
@@ -336,7 +340,8 @@ def update_session(session_id: int, confidence: float, last_detected_at: str) ->
 
 
 def update_session_with_count(session_id: int, confidence: float, last_detected_at: str,
-                               detection_count_increment: int, audio_filename: str) -> None:
+                               detection_count_increment: int, audio_filename: str,
+                               detected_timestamp: Optional[int] = None) -> None:
     """
     Update an existing session with multiple detections from one audio file.
 
@@ -354,26 +359,28 @@ def update_session_with_count(session_id: int, confidence: float, last_detected_
         last_detected_at: ISO format timestamp of the new detection
         detection_count_increment: Number of detections to add to the count
         audio_filename: The filename of the newly uploaded audio file
+        detected_timestamp: Unix time the clip was recorded (defaults to now)
     """
     import time
     conn = get_connection()
     cursor = conn.cursor()
 
-    current_timestamp = int(time.time())
+    current_timestamp = detected_timestamp if detected_timestamp is not None else int(time.time())
 
     # Update session: increment count by specified amount, update last_detected_at and
     # timestamp, and update confidence/audio_filename together only if the new
     # confidence is higher (so audio_filename always matches whichever detection
-    # actually produced the stored confidence value).
+    # actually produced the stored confidence value). The last-detected time only
+    # moves forward, so a late-arriving older clip can't rewind a session's end.
     cursor.execute("""
         UPDATE detections
         SET detection_count = detection_count + ?,
-            last_detected_at = ?,
+            last_detected_at = CASE WHEN ? >= last_detected_timestamp THEN ? ELSE last_detected_at END,
             audio_filename = CASE WHEN ? > confidence THEN ? ELSE audio_filename END,
-            last_detected_timestamp = ?,
+            last_detected_timestamp = MAX(last_detected_timestamp, ?),
             confidence = CASE WHEN ? > confidence THEN ? ELSE confidence END
         WHERE id = ?
-    """, (detection_count_increment, last_detected_at, confidence, audio_filename,
+    """, (detection_count_increment, current_timestamp, last_detected_at, confidence, audio_filename,
           current_timestamp, confidence, confidence, session_id))
 
     conn.commit()

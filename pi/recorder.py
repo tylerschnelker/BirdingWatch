@@ -1,6 +1,12 @@
 """
 Continuous audio monitoring and recording for bird detection.
-Fixed version: stable stream-based capture (no blocking sd.rec loop).
+
+Recording and uploading are decoupled: the audio loop only ever saves clips
+into RECORDING_DIR (the "outbox"), and a background thread uploads them
+oldest-first, deleting each one only once the server has accepted it. A flaky
+or dead network therefore never stops recording - clips queue up on disk and
+drain when connectivity returns (the server dates each clip by the timestamp
+in its filename, not by when it arrives).
 """
 
 import sounddevice as sd
@@ -10,6 +16,7 @@ import wave
 import os
 import time
 import queue
+import threading
 from datetime import datetime
 from pathlib import Path
 import sys
@@ -21,8 +28,15 @@ from config import (
     SILENCE_THRESHOLD,
     MIN_RECORDING_SECONDS,
     MAX_RECORDING_SECONDS,
-    UPLOAD_ENDPOINT
+    UPLOAD_ENDPOINT,
+    OUTBOX_MAX_MB,
+    HEARTBEAT_SECONDS
 )
+
+# systemd captures stdout through a pipe, which Python block-buffers by
+# default - without this, nothing shows up in `journalctl -u birdwatch-recorder`
+# until several KB of output have accumulated.
+sys.stdout.reconfigure(line_buffering=True)
 
 # ----------------------------
 # Setup
@@ -35,6 +49,9 @@ CHANNELS = 1  # FORCE mono capture (critical fix)
 RECORDING_DIR = Path("/home/pi/birdwatch_recordings")
 RECORDING_DIR.mkdir(parents=True, exist_ok=True)
 
+# If the USB mic drops off the bus, the stream callback silently stops firing.
+AUDIO_STALL_SECONDS = 10
+
 audio_queue = queue.Queue()
 
 # state
@@ -42,6 +59,9 @@ is_recording = False
 recording_buffer = []
 silence_counter = 0.0
 SILENCE_LIMIT = 2.0  # seconds of silence to stop recording
+
+# Unix time of the last audio block received from the mic, reported in heartbeats.
+last_audio_time = 0.0
 
 
 # ----------------------------
@@ -55,15 +75,43 @@ def calculate_rms(audio_chunk):
 def save_wav(filename, audio_data, sample_rate):
     """
     Save mono float audio [-1,1] to WAV.
+
+    Writes to a .part file and renames it into place so the uploader thread
+    never picks up a half-written clip.
     """
     audio_int16 = np.clip(audio_data, -1, 1)
     audio_int16 = (audio_int16 * 32767).astype(np.int16)
 
-    with wave.open(str(filename), "wb") as wav_file:
+    tmp_path = Path(str(filename) + ".part")
+    with wave.open(str(tmp_path), "wb") as wav_file:
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
         wav_file.setframerate(sample_rate)
         wav_file.writeframes(audio_int16.tobytes())
+    os.replace(tmp_path, filename)
+
+
+def save_clip(audio):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = RECORDING_DIR / f"birdcall_{timestamp}.wav"
+    # Two clips finishing within the same second would otherwise overwrite each other.
+    suffix = 1
+    while filename.exists():
+        filename = RECORDING_DIR / f"birdcall_{timestamp}_{suffix}.wav"
+        suffix += 1
+
+    save_wav(filename, audio, SAMPLE_RATE)
+    print(f"[SAVED] {filename.name} ({len(audio)/SAMPLE_RATE:.1f}s)")
+
+
+# ----------------------------
+# Upload (background thread)
+# ----------------------------
+
+# Upload outcomes
+UPLOADED = "uploaded"      # server accepted it - delete locally
+REJECTED = "rejected"      # server will never accept this file - delete locally
+RETRY = "retry"            # network/server trouble - keep it and try again later
 
 
 def upload_audio(filepath):
@@ -77,20 +125,111 @@ def upload_audio(filepath):
             response = requests.post(
                 upload_url,
                 files=files,
-                timeout=30,
+                timeout=(10, 120),  # (connect, read) - BirdNET analysis can take a while
                 headers={"x-api-key": API_KEY}
             )
 
         if response.status_code == 200:
             print(f"[UPLOAD OK] {filepath.name}")
-            return True
-        else:
-            print(f"[UPLOAD FAIL] HTTP {response.status_code}")
-            return False
+            return UPLOADED
+        if response.status_code in (400, 413, 415, 422):
+            # Retrying an identical file can't change these answers; keeping it
+            # would just block the queue behind it forever.
+            print(f"[UPLOAD REJECTED] {filepath.name}: HTTP {response.status_code}, dropping")
+            return REJECTED
+        print(f"[UPLOAD FAIL] {filepath.name}: HTTP {response.status_code}")
+        return RETRY
 
     except Exception as e:
-        print(f"[UPLOAD ERROR] {e}")
-        return False
+        print(f"[UPLOAD ERROR] {filepath.name}: {e}")
+        return RETRY
+
+
+def pending_clips():
+    """Clips waiting to upload, oldest first."""
+    return sorted(RECORDING_DIR.glob("birdcall_*.wav"), key=lambda p: p.stat().st_mtime)
+
+
+def enforce_outbox_limit(clips):
+    """
+    During a long outage, drop the oldest clips once the outbox exceeds
+    OUTBOX_MAX_MB, so the SD card can never fill up. Returns the survivors.
+    """
+    limit_bytes = OUTBOX_MAX_MB * 1024 * 1024
+    sizes = [p.stat().st_size for p in clips]
+    total = sum(sizes)
+    dropped = 0
+    while clips and total > limit_bytes:
+        total -= sizes.pop(0)
+        try:
+            clips.pop(0).unlink()
+            dropped += 1
+        except OSError:
+            pass
+    if dropped:
+        print(f"[OUTBOX FULL] dropped {dropped} oldest clip(s) to stay under {OUTBOX_MAX_MB} MB")
+    return clips
+
+
+def send_heartbeat(pending_count):
+    try:
+        requests.post(
+            DESKTOP_SERVER_URL + "/api/heartbeat",
+            json={
+                "pending_clips": pending_count,
+                "seconds_since_audio": round(time.time() - last_audio_time, 1) if last_audio_time else None,
+            },
+            timeout=10,
+            headers={"x-api-key": API_KEY}
+        )
+    except Exception as e:
+        print(f"[HEARTBEAT ERROR] {e}")
+
+
+def uploader_loop():
+    backoff = 5
+    last_heartbeat = 0.0
+
+    # Clean up any .part files left behind if we were killed mid-write.
+    for part in RECORDING_DIR.glob("*.part"):
+        try:
+            part.unlink()
+        except OSError:
+            pass
+
+    while True:
+        try:
+            clips = enforce_outbox_limit(pending_clips())
+
+            if time.time() - last_heartbeat >= HEARTBEAT_SECONDS:
+                send_heartbeat(len(clips))
+                last_heartbeat = time.time()
+
+            if not clips:
+                time.sleep(1)
+                continue
+
+            clip = clips[0]
+            result = upload_audio(clip)
+
+            if result in (UPLOADED, REJECTED):
+                try:
+                    clip.unlink()
+                except OSError as e:
+                    print(f"[CLEANUP ERROR] {e}")
+                backoff = 5
+                if len(clips) > 1:
+                    print(f"[OUTBOX] {len(clips) - 1} clip(s) still pending")
+            else:
+                print(f"[OUTBOX] {len(clips)} clip(s) pending, retrying in {backoff}s")
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 300)
+
+        except Exception as e:
+            # Never let the uploader thread die - recording depends on it
+            # eventually draining the outbox.
+            print(f"[UPLOADER ERROR] {e}")
+            time.sleep(10)
 
 
 # ----------------------------
@@ -113,7 +252,7 @@ def audio_callback(indata, frames, time, status):
 # ----------------------------
 
 def monitor():
-    global is_recording, recording_buffer, silence_counter
+    global is_recording, recording_buffer, silence_counter, last_audio_time
 
     print("Starting BirdWatch recorder (stream mode)...")
     print(f"Device: {DEVICE} | Sample rate: {SAMPLE_RATE} | Mono: {CHANNELS}")
@@ -128,7 +267,16 @@ def monitor():
     ):
 
         while True:
-            data = audio_queue.get()
+            # If the USB mic drops off the bus, the callback silently stops
+            # firing and get() would block forever. Exit instead so systemd
+            # (Restart=always) relaunches us with a fresh PortAudio device list.
+            try:
+                data = audio_queue.get(timeout=AUDIO_STALL_SECONDS)
+            except queue.Empty:
+                print(f"[AUDIO STALL] no audio for {AUDIO_STALL_SECONDS}s, exiting for systemd restart", flush=True)
+                os._exit(1)
+
+            last_audio_time = time.time()
 
             # flatten to 1D mono
             chunk = np.squeeze(data)
@@ -173,40 +321,7 @@ def monitor():
                     if len(audio) > max_samples:
                         audio = audio[:max_samples]
 
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = RECORDING_DIR / f"birdcall_{timestamp}.wav"
-
-                    save_wav(filename, audio, SAMPLE_RATE)
-
-                    print(f"[SAVED] {filename} ({len(audio)/SAMPLE_RATE:.1f}s)")
-
-                    # ----------------------------
-                    # Upload with retry + ALWAYS cleanup
-                    # ----------------------------
-
-                    uploaded = False
-
-                    for attempt in range(3):
-                        print(f"[UPLOAD] attempt {attempt + 1}/3")
-
-                        if upload_audio(filename):
-                            uploaded = True
-                            break
-
-                        time.sleep(2)
-
-                    if uploaded:
-                        print("[UPLOAD SUCCESS]")
-                    else:
-                        print("[UPLOAD FAILED AFTER RETRIES]")
-
-                    # ALWAYS delete local temp file
-                    try:
-                        if filename.exists():
-                            os.remove(filename)
-                            print("[CLEANUP] deleted local file")
-                    except Exception as e:
-                        print(f"[CLEANUP ERROR] {e}")
+                    save_clip(audio)
 
                     recording_buffer = []
                     silence_counter = 0.0
@@ -215,38 +330,7 @@ def monitor():
                 elif duration >= MAX_RECORDING_SECONDS:
                     is_recording = False
 
-                    audio = np.concatenate(recording_buffer)
-
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = RECORDING_DIR / f"birdcall_{timestamp}.wav"
-
-                    save_wav(filename, audio, SAMPLE_RATE)
-
-                    print(f"[MAX SAVE] {filename}")
-
-                    uploaded = False
-
-                    for attempt in range(3):
-                        print(f"[UPLOAD] attempt {attempt + 1}/3")
-
-                        if upload_audio(filename):
-                            uploaded = True
-                            break
-
-                        time.sleep(2)
-
-                    if uploaded:
-                        print("[UPLOAD SUCCESS]")
-                    else:
-                        print("[UPLOAD FAILED AFTER RETRIES]")
-
-                    # ALWAYS delete local temp file
-                    try:
-                        if filename.exists():
-                            os.remove(filename)
-                            print("[CLEANUP] deleted local file")
-                    except Exception as e:
-                        print(f"[CLEANUP ERROR] {e}")
+                    save_clip(np.concatenate(recording_buffer))
 
                     recording_buffer = []
                     silence_counter = 0.0
@@ -257,6 +341,8 @@ def monitor():
 # ----------------------------
 
 def main():
+    threading.Thread(target=uploader_loop, name="uploader", daemon=True).start()
+
     while True:
         try:
             monitor()
@@ -266,7 +352,6 @@ def main():
         except Exception as e:
             print("Fatal error:", e)
             print("Restarting in 5s...")
-            import time
             time.sleep(5)
 
 
