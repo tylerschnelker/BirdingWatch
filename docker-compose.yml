@@ -1,0 +1,62 @@
+# BirdingWatch on the homelab. Public only through the Cloudflare Tunnel:
+# no host ports are published, and the `birdingwatch` network is firewalled
+# off from the host, the LAN, Tailscale and every other Docker network
+# (scripts/birdingwatch-firewall.sh). Personal-Finance runs on this box.
+services:
+  birdingwatch:
+    build: .
+    image: birdingwatch:local
+    container_name: birdingwatch
+    restart: unless-stopped
+    # Exact copy of the droplet's server/.env (chmod 600, owned by ty).
+    env_file: ./.env
+    environment:
+      - DATABASE_PATH=/data/birdwatch.db
+      - UPLOAD_DIR=/data/uploads
+      # Pi and server must share a timezone (detections are dated from the
+      # Pi's filenames, and /api/today uses server-local time).
+      - TZ=America/Denver
+    volumes:
+      - ./data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 4g
+    cpus: 3
+    pids_limit: 512
+    networks: [birdingwatch]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/recorder-status', timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: birdingwatch-cloudflared
+    restart: unless-stopped
+    # Locally-managed tunnel "homelab" (cloudflared CLI, not the Zero Trust
+    # dashboard). ./cloudflared is dir 700, files 600/400, owned by the image's
+    # nonroot UID 65532. Only the config and this tunnel's credentials are
+    # mounted; the account-wide cert.pem stays out of the running container.
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ./cloudflared/56ca22e4-2874-46b9-900a-d8c3d86532c8.json:/etc/cloudflared/credentials.json:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [birdingwatch]
+    depends_on: [birdingwatch]
+
+networks:
+  birdingwatch:
+    name: birdingwatch
+    driver_opts:
+      # Fixed name/subnet so the host firewall rules can match on them.
+      com.docker.network.bridge.name: br-birdwatch
+    ipam:
+      config:
+        - subnet: 172.30.50.0/24

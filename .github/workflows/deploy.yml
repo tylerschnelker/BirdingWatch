@@ -4,6 +4,9 @@ on:
   push:
     branches: [ "main" ]
 
+# The server half moved from the DigitalOcean droplet to the homelab
+# (2026-10-03). The homelab isn't reachable from GitHub and runs no runner,
+# so it deploys by hand: scripts/deploy-homelab.sh. Only the Pi deploys here.
 jobs:
 
   deploy-pi:
@@ -14,20 +17,3 @@ jobs:
           cd /home/pi/BirdingWatch
           git pull
           sudo systemctl restart birdwatch-recorder
-
-
-  deploy-cloud:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy cloud server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.CLOUD_HOST }}
-          username: ${{ secrets.CLOUD_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            cd /root/BirdingWatch/server
-            git pull
-            source venv/bin/activate
-            pip install -r requirements.txt
-            sudo systemctl restart birdwatch

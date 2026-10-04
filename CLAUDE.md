@@ -1,11 +1,53 @@
 # BirdWatch
 
 Backyard bird-call detector. A Raspberry Pi records audio continuously, uploads
-clips over HTTPS to a cloud server, the server runs BirdNET-Analyzer to identify
+clips over HTTPS to the server, the server runs BirdNET-Analyzer to identify
 species, stores results in SQLite, and serves a small vanilla-JS dashboard.
 
-Live site: https://marysbackyardbirds.xyz/ (DigitalOcean droplet, single Ubuntu
-server running both the API and the web UI via one FastAPI process + systemd).
+Live site: https://marysbackyardbirds.xyz/ (since 2026-10-03: a Docker container on
+the user's home server ("homelab"), published only through a Cloudflare Tunnel; see
+"Hosting" below. Previously a DigitalOcean droplet, decommissioned.)
+
+## Hosting (homelab + Cloudflare Tunnel)
+
+- **Container**: `Dockerfile` + `docker-compose.yml` at the repo root. Python 3.12 with
+  `server/requirements.lock.txt` as pip constraints. That file is the droplet's
+  `pip freeze` at migration (TensorFlow 2.21.0, birdnetlib 0.18.1), so BirdNET
+  behaves exactly as it did there; update it deliberately. Runs `uvicorn main:app`
+  from `server/`.
+- **Data volume**: `./data` (gitignored) is mounted at `/data`. It holds
+  `birdwatch.db` and `uploads/` via `DATABASE_PATH`/`UPLOAD_DIR` overrides in
+  compose, owned by the container's dedicated UID 10001 (dir 700, files 600).
+  `TZ=America/Denver` must keep matching the Pi (see "Recorded time" below).
+- **Config**: `./.env` (gitignored, 600) is the droplet's `server/.env` copied
+  byte-for-byte, loaded via compose `env_file`. **Never regenerate the VAPID keys**:
+  every push subscription would break.
+- **Isolation (the same homelab runs a private, auth-less finance app)**: no host
+  ports published at all. The container is non-root, has a read-only root fs
+  (`/tmp` tmpfs), drops all capabilities, sets no-new-privileges, has CPU/mem/pids
+  limits, has no Docker socket, and mounts only `./data`. Its `birdingwatch` Docker
+  network (bridge `br-birdwatch`, 172.30.50.0/24) is firewalled by
+  `scripts/birdingwatch-firewall.sh`, installed root-owned at `/usr/local/sbin/` and
+  run by `birdingwatch-firewall.service` before docker.service. It drops all
+  traffic from that bridge to the host itself and to private/CGNAT/link-local
+  ranges (LAN, Tailscale peers, other Docker networks), and allows the internet
+  (Cloudflare, Wikipedia, web push). Verified at migration from inside the
+  container: finance app, Backrest, SSH, router, PC and Pi all blocked; internet
+  reachable. Changes to `docker-compose.yml` or the firewall script weaken or
+  strengthen this boundary, so review them as security changes.
+- **Public access**: a *locally-managed* Cloudflare Tunnel named `homelab`, created
+  with the `cloudflared` CLI (not the Zero Trust dashboard). The `cloudflared`
+  container shares only the `birdingwatch` network and runs as nonroot UID 65532,
+  read-only. It gets only `./cloudflared/config.yml` and the tunnel credentials
+  JSON (gitignored, 600/400), not the account cert. Ingress:
+  `marysbackyardbirds.xyz` and `www` → `http://birdingwatch:8000`, everything
+  else → 404. DNS is on Cloudflare (moved from Porkbun); TLS terminates at
+  Cloudflare. The droplet's nginx and its `client_max_body_size` are gone.
+  Cloudflare's 100 MB upload limit is far above any clip.
+- **Deploys**: by hand, `scripts/deploy-homelab.sh` (pull `--ff-only`, rebuild,
+  restart, wait for the healthcheck, check the public URL). It warns when
+  isolation files changed. GitHub can't reach the homelab and there's no runner
+  on it; see the deploy.yml note under "Key files".
 
 ## Architecture
 
@@ -17,7 +59,7 @@ Raspberry Pi (pi/recorder.py)
      only once the server accepts (survives network outages - see "Recorder reliability")
   -> POSTs /api/heartbeat every 60s so the server can alert when the recorder goes dark
 
-Cloud server (server/main.py, FastAPI)
+Server (server/main.py, FastAPI; homelab Docker container behind a Cloudflare Tunnel)
   -> /upload-audio: saves .wav, runs analyzer.analyze_audio() (BirdNET),
      groups detections by species, upserts into SQLite as "sessions", and
      runs the daily-best-clip retention claim (see "Audio retention" below)
@@ -55,9 +97,14 @@ using `server/`'s. Both files are local dev tooling, not part of the deployed ap
 - [pi/recorder.py](pi/recorder.py) — continuous `sounddevice` stream, RMS-threshold VAD, saves/uploads/retries/cleans up
 - [pi/config.py](pi/config.py) — Pi env vars
 - [.github/workflows/deploy.yml](.github/workflows/deploy.yml) — on push to `main`: a self-hosted
-  runner *on the Pi itself* pulls + restarts `birdwatch-recorder`; a separate job SSHes into the
-  DigitalOcean droplet, pulls, restarts the `birdwatch` systemd service. No staging, no tests, no
-  build step — push to main deploys straight to production on both machines.
+  runner *on the Pi itself* pulls + restarts `birdwatch-recorder`. That's the only job now. The
+  old job that SSHed into the droplet was removed at the migration, deliberately not replaced:
+  the homelab deploys by hand with `scripts/deploy-homelab.sh`. Opening the homelab's SSH to
+  GitHub or running a self-hosted runner on it (risky for a public repo) were both rejected.
+  The repo is public and the Pi runs a self-hosted runner, so fork-PR workflows should require
+  approval for all external contributors (Settings → Actions → General).
+- [Dockerfile](Dockerfile), [docker-compose.yml](docker-compose.yml),
+  [scripts/](scripts/) — homelab deployment, firewall isolation, deploy script; see "Hosting".
 
 ## "Sessions" concept (important, non-obvious)
 
@@ -192,15 +239,22 @@ rejected requests in the logs) - the longest, often best, recordings.
   (`/etc/NetworkManager/conf.d/wifi-powersave-off.conf`), hardware watchdog
   (`/etc/systemd/system.conf.d/watchdog.conf`, `RuntimeWatchdogSec=15`). `pi` needs a sudo password,
   so none of this can be changed remotely without the user.
-- **nginx** on the droplet (`/etc/nginx/sites-available/birdwatch`) is not in the repo; it needs
-  `client_max_body_size` raised above the largest clip (~1.3 MB for 15s at 44.1 kHz).
+- **nginx** (formerly on the droplet, with `client_max_body_size 20M` for long clips) is gone
+  since the homelab move. Cloudflare's tunnel fronts the app directly (100 MB request limit).
+  The Pi's `DESKTOP_SERVER_URL` (in `pi/.env`) is `https://marysbackyardbirds.xyz`, the domain,
+  not an IP, so the move needed no Pi change. Note that line in the Pi's file has a space
+  before `=` (`DESKTOP_SERVER_URL =https://...`), which python-dotenv tolerates.
 
 ## Config / environment
 
-- Root-level `.env` (gitignored) holds the real deployed values for both the Pi and the server —
-  `.env.example` documents all keys. `LAT`/`LON` are set to real Colorado coordinates.
-- `server/config.py` loads `server/.env` specifically (`BASE_DIR / ".env"`), not the root one — worth
-  double-checking which `.env` is actually present/used on each machine if config seems stale.
+- `.env.example` documents all keys. `LAT`/`LON` are set to real Colorado coordinates.
+- **Server**: the real values are the homelab's repo-root `.env`, passed to the container by compose
+  `env_file`. It's a byte-identical copy of what the droplet actually ran from, `server/.env`
+  (the droplet had no root `.env`). Compose overrides `DATABASE_PATH`/`UPLOAD_DIR` to `/data`.
+  `server/config.py`'s own `load_dotenv(BASE_DIR / ".env")` finds nothing in the image, which is
+  fine: env vars are already set.
+- **Pi**: `pi/.env` on the Pi (`pi/config.py` calls `load_dotenv()` from the `pi/` working dir);
+  the Pi's repo-root `.env` is effectively empty.
 - API auth is a single shared static `API_KEY` sent as `x-api-key` header — no per-device keys, no
   rotation mechanism.
 
@@ -208,7 +262,8 @@ rejected requests in the logs) - the longest, often best, recordings.
 
 - `server/analyzer.py`'s `Analyzer()` (the BirdNET model) is instantiated fresh inside every call to
   `analyze_audio()`, i.e. reloaded from disk on every single upload rather than once at startup.
-  Not an accuracy issue, but worth knowing if latency/CPU on the droplet ever comes up.
+  Not an accuracy issue, but worth knowing if latency/CPU on the server ever comes up (~15s for
+  the first upload after a container start on the homelab, including model load).
 - `database.py.init_db()` does ad-hoc `ALTER TABLE ... ADD COLUMN` migrations wrapped in
   try/except — there's no migration framework. If you change the schema, follow that pattern or
   expect the comment's advice ("delete birdwatch.db") to nuke history.

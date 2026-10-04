@@ -1,0 +1,15 @@
+.git
+.github
+.claude
+.env
+*.env
+data
+pi
+scripts
+**/__pycache__
+**/*.pyc
+server/venv
+server/.venv
+server/.env
+server/*.db
+server/uploads

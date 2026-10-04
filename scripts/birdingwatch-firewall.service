@@ -1,0 +1,15 @@
+[Unit]
+Description=Firewall isolation for the BirdingWatch Docker network
+# Before Docker starts any containers, so the isolation is in place from the
+# first packet after boot.
+Before=docker.service
+Wants=network-pre.target
+After=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/birdingwatch-firewall.sh
+
+[Install]
+WantedBy=multi-user.target docker.service

@@ -1,6 +1,6 @@
 # BirdWatch
 
-A full-stack, production-deployed bird detection system that continuously records backyard audio using a Raspberry Pi and performs cloud-based species identification using BirdNET. The system includes a web dashboard, automated deployment via CI/CD, and runs on a single DigitalOcean Ubuntu server.
+A full-stack bird detection system that continuously records backyard audio using a Raspberry Pi and identifies species with BirdNET. The server and web dashboard run in Docker on a home server, published to the internet only through a Cloudflare Tunnel.
 
 ---
 
@@ -8,46 +8,41 @@ A full-stack, production-deployed bird detection system that continuously record
 
 ```mermaid
 graph TD
-    A[Raspberry Pi<br/>Audio Recorder<br/>recorder.py<br/>USB Microphone<br/>HTTPS + API Key] -->|API Key Auth| B[Public Internet]
-    B --> C[DigitalOcean Ubuntu Droplet<br/>Backend + Analysis + Database<br/>FastAPI<br/>BirdNET-Analyzer<br/>SQLite<br/>Systemd Service<br/>Web UI HTML/CSS/JS]
-    C --> D[Web Dashboard<br/>http://143.198.232.142:8000/]
+    A[Raspberry Pi<br/>Audio Recorder<br/>recorder.py<br/>USB Microphone] -->|HTTPS + API Key| B[Cloudflare<br/>marysbackyardbirds.xyz]
+    B -->|Cloudflare Tunnel<br/>outbound-only, no open ports| C[Home server, Docker<br/>FastAPI + BirdNET-Analyzer<br/>SQLite + Web UI<br/>isolated container network]
+    D[Browsers] -->|HTTPS| B
 ```
-
 
 ---
 
 ## Live Deployment
 
-The application is deployed on a single **DigitalOcean Ubuntu server**.
+**Web Interface:** https://marysbackyardbirds.xyz/
 
-**Web Interface:**
-
-
-https://marysbackyardbirds.xyz/
-
+The app runs as a Docker container on a home server ("homelab"). Visitors and the
+Pi reach it through Cloudflare, which forwards requests over an outbound-only
+Cloudflare Tunnel. No router ports are open, and the home IP isn't exposed. The
+container is locked down and firewalled off from everything else on the home
+network (see CLAUDE.md "Hosting"). It moved here from a DigitalOcean droplet in
+October 2026.
 
 The Raspberry Pi records audio locally and uploads detected clips to the server via a secure API key.
 
 ---
 
-## CI/CD Pipeline
+## Deployment
 
-This project uses **GitHub Actions** for automated deployment.
+- **Raspberry Pi**: GitHub Actions. On every push to `main`, a self-hosted runner on
+  the Pi pulls the latest code and restarts the recorder service.
+- **Server (homelab)**: by hand, when there's a code change:
 
-On every push to the `main` branch:
+  ```bash
+  cd ~/apps/birdingwatch && scripts/deploy-homelab.sh
+  ```
 
-- The Raspberry Pi runner:
-  - Pulls latest code
-  - Restarts the recorder service
-- The DigitalOcean server:
-  - Pulls latest backend changes
-  - Restarts the FastAPI service
-
-Deployment is fully automated using:
-- Self-hosted GitHub Actions runner (on the Pi)
-- SSH-based deployment to DigitalOcean
-
-No manual deployment steps are required.
+  This pulls `main`, rebuilds the image, restarts the container, waits for the
+  healthcheck and checks the public URL. The homelab isn't reachable from GitHub
+  and runs no Actions runner, by design.
 
 ---
 
@@ -61,13 +56,13 @@ No manual deployment steps are required.
 - Systemd service
 - Self-hosted GitHub Actions runner
 
-### Cloud Server (DigitalOcean Ubuntu)
+### Server (homelab, Docker)
 - FastAPI
 - Uvicorn
-- BirdNET-Analyzer (Cornell Lab)
+- BirdNET-Analyzer (Cornell Lab) via birdnetlib + TensorFlow
 - SQLite
 - aiofiles
-- Systemd service
+- Docker Compose, Cloudflare Tunnel (cloudflared)
 
 ### Frontend
 - Vanilla HTML
@@ -77,10 +72,10 @@ No manual deployment steps are required.
 - No build step
 
 ### DevOps
-- GitHub Actions CI/CD
-- Systemd service management
-- Public API authentication
-- Ubuntu production deployment
+- GitHub Actions (Pi deploys)
+- Docker with a hardened, firewall-isolated container
+- Cloudflare Tunnel + Cloudflare DNS/TLS
+- API key authentication for uploads
 
 ---
 
@@ -106,9 +101,16 @@ web/
 ├── style.css
 └── app.js
 
-.github/workflows/
-└── deploy.yml
+scripts/
+├── deploy-homelab.sh            # manual server deploy
+├── birdingwatch-firewall.sh     # host firewall isolation for the container network
+└── birdingwatch-firewall.service
 
+.github/workflows/
+└── deploy.yml                   # Pi deploy only
+
+Dockerfile
+docker-compose.yml               # app + cloudflared, no host ports
 .gitignore
 README.md
 ```
@@ -123,28 +125,28 @@ README.md
 **Raspberry Pi:**
 
 
-DESKTOP_SERVER_URL=http://143.198.232.142:8000
+DESKTOP_SERVER_URL=https://marysbackyardbirds.xyz
 
 API_KEY=your_secure_key
 LAT=optional
 LON=optional
 
 
-The server uses its own `.env` configuration.
+The server uses its own `.env` configuration (see `.env.example`).
 
 ---
 
 ## Running the System
 
-### Cloud Server
+### Server (homelab, Docker)
 
+```bash
+# .env (server config, chmod 600) and data/ (birdwatch.db + uploads/) at the repo root
+docker compose up -d --build
+```
 
-cd server
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000
-
-
-In production, the server runs as a systemd service.
+The tunnel config and credentials live in `cloudflared/` (gitignored). For local
+development without Docker, see CLAUDE.md "Local dev".
 
 ---
 
@@ -168,17 +170,17 @@ In production, the recorder runs as a systemd service and deploys automatically 
 - Mobile-friendly web dashboard
 - Audio playback in browser
 - Species statistics and summaries
-- Fully automated CI/CD deployment
-- Production cloud hosting
+- Automated Pi deployment, one-command server deploys
+- Self-hosted, publicly reachable through Cloudflare Tunnel with no open ports
 
 ---
 
 ## Troubleshooting
 
 - **No detections:** Verify Pi can reach server and API key is correct.
-- **Upload failures:** Confirm `DESKTOP_SERVER_URL` and firewall settings.
-- **BirdNET errors:** Ensure dependencies are installed on the server.
-- **Service not running:** Check `systemctl status birdwatch`.
+- **Upload failures:** Confirm `DESKTOP_SERVER_URL` and check the Pi's log (`journalctl -u birdwatch-recorder`). Clips queue on the Pi and retry automatically.
+- **Site down:** `docker compose ps` and `docker logs birdingwatch` / `docker logs birdingwatch-cloudflared` on the homelab.
+- **BirdNET errors:** Rebuild the image (`scripts/deploy-homelab.sh`); versions are pinned in `server/requirements.lock.txt`.
 
 ---
 
