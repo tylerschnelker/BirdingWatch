@@ -90,7 +90,10 @@ using `server/`'s. Both files are local dev tooling, not part of the deployed ap
 
 - [server/main.py](server/main.py) — FastAPI app, all routes, upload handling, session grouping logic
 - [server/analyzer.py](server/analyzer.py) — wraps `birdnetlib` for species ID; also fetches Wikipedia
-  summary/image per species (cached in-memory dict, not persisted)
+  summary/image per species (cached in-memory dict, not persisted). Stored on each new session as the
+  fallback; what the feed actually shows comes from `species_media.py` (below).
+- [server/species_media.py](server/species_media.py) — rotating daily photo + description per species.
+  See "Rotating photos and descriptions" below.
 - [server/database.py](server/database.py) — raw `sqlite3`, no ORM. See "Sessions" below.
 - [server/config.py](server/config.py) — server env vars (loads `server/.env` if present, else falls
   back to defaults; the real deployed config is in the repo-root `.env`, gitignored)
@@ -245,6 +248,29 @@ rejected requests in the logs) - the longest, often best, recordings.
   not an IP, so the move needed no Pi change. Note that line in the Pi's file has a space
   before `=` (`DESKTOP_SERVER_URL =https://...`), which python-dotenv tolerates.
 
+## Rotating photos and descriptions (2026-10-07)
+
+User complaint: the same Wikipedia lead photo and intro paragraph every day for a species.
+`species_media.py` caches, per species in the `species_media` table (refreshed every 30 days, empty
+results retried after 1 day, by a background thread started at startup, ~3 s between species so
+iNaturalist isn't hammered; page loads never wait on an API):
+- **Photos**: up to 50 iNaturalist research-grade observation photos (most-faved first, one per
+  observation, CC licenses only, `small` 240px size). Taxon matched by scientific name then common
+  name, accepting `matched_term` synonyms (BirdNET's "Cordilleran Flycatcher" is iNat's Western
+  Flycatcher). CC BY* licenses require credit, so cards show "📷 observer · iNaturalist (license)"
+  linking to the observation. **Keep that credit if the card layout changes.**
+- **Descriptions**: the Wikipedia article iNaturalist links to the taxon (avoids name ambiguity:
+  "Bushtit" redirects to the whole family), then scientific, then common name. Plaintext extract split
+  into sections; references/links and dry taxonomy/subspecies sections are skipped; each is trimmed to
+  ~1200 chars. Shown with the section title and a "Wikipedia" link (CC BY-SA attribution).
+- **Rotation**: `_pick()` = `(date.toordinal() + sha256(species) offset) % pool size`, so a species
+  shows the same thing all day, past days stay stable, and nothing repeats until the pool cycles.
+- `apply_daily_media()` runs in `/api/days/{date}` (that date) and `/api/species` (today), adding
+  `photo_credit` and `fact`; with no cache it falls back to the session's stored Wikipedia photo/summary.
+- The day feed also returns `first_heard_timestamp` and `days_heard` ("🏡 First heard here May 30 ·
+  heard on 45 days", counting days up to the viewed day; hidden on a first-ever card).
+- Text from these APIs goes through `escapeHtml()` in `app.js` (this site is public).
+
 ## Config / environment
 
 - `.env.example` documents all keys. `LAT`/`LON` are set to real Colorado coordinates.
@@ -268,8 +294,8 @@ rejected requests in the logs) - the longest, often best, recordings.
   try/except — there's no migration framework. If you change the schema, follow that pattern or
   expect the comment's advice ("delete birdwatch.db") to nuke history.
 - Wikipedia species info (`fetch_bird_info`) is looked up by common name with no disambiguation,
-  cached only in an in-memory dict that resets on server restart — wrong/missing images or bios for
-  ambiguous species names are a UI/content issue, not a detection-accuracy one.
+  cached only in an in-memory dict that resets on server restart. It's only the fallback now; the
+  displayed photo/description come from `species_media.py`.
 - `pi/config.py` defaults `SAMPLE_RATE` to 48000 but the actual deployed root `.env` sets 44100 —
   birdnetlib/librosa resample internally so this isn't currently causing problems, but the mismatch
   between file default and actual value is worth knowing if audio issues come up.

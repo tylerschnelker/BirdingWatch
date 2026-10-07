@@ -101,6 +101,18 @@ def init_db():
         )
     """)
 
+    # Cached per-species photo pool (iNaturalist) and description sections
+    # (Wikipedia) that the day feed rotates through. See species_media.py.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS species_media (
+            species_common TEXT PRIMARY KEY,
+            photos_json TEXT NOT NULL,
+            sections_json TEXT NOT NULL,
+            wiki_title TEXT,
+            fetched_at INTEGER NOT NULL
+        )
+    """)
+
     conn.commit()
     conn.close()
     print(f"Database initialized at {DATABASE_PATH}")
@@ -198,6 +210,7 @@ def get_species_summary() -> List[Dict]:
     cursor.execute("""
         SELECT 
             species_common,
+            MAX(species_scientific) as species_scientific,
             COUNT(*) as total_sessions,
             AVG(detection_count) as avg_detections,
             MAX(
@@ -557,7 +570,9 @@ def get_day_species_summary(detection_date: str, start_ts: int, end_ts: int) -> 
         List of dicts (one per species detected that day) with keys:
         species_common, species_scientific, visit_count, total_calls,
         best_confidence, last_seen_at, last_seen_timestamp, image_url,
-        wiki_summary, all_time_sessions, is_first_ever, audio_filename (nullable).
+        wiki_summary, all_time_sessions, is_first_ever, first_heard_timestamp,
+        days_heard (distinct local days heard, up to and including this one),
+        audio_filename (nullable).
         Sorted so rarer species (fewer all-time sessions) surface first, with
         more recently-seen species as the tiebreaker.
     """
@@ -577,18 +592,22 @@ def get_day_species_summary(detection_date: str, start_ts: int, end_ts: int) -> 
             MAX(d.image_url) as image_url,
             MAX(d.wiki_summary) as wiki_summary,
             (SELECT COUNT(*) FROM detections d2 WHERE d2.species_common = d.species_common) as all_time_sessions,
-            (SELECT MIN(d3.first_detected_timestamp) FROM detections d3 WHERE d3.species_common = d.species_common) as earliest_ever_timestamp
+            (SELECT MIN(d3.first_detected_timestamp) FROM detections d3 WHERE d3.species_common = d.species_common) as earliest_ever_timestamp,
+            (SELECT COUNT(DISTINCT date(d4.last_detected_timestamp, 'unixepoch', 'localtime'))
+                FROM detections d4
+                WHERE d4.species_common = d.species_common AND d4.last_detected_timestamp < ?) as days_heard
         FROM detections d
         WHERE d.last_detected_timestamp >= ? AND d.last_detected_timestamp < ?
         GROUP BY d.species_common
         ORDER BY all_time_sessions ASC, last_seen_timestamp DESC
-    """, (start_ts, end_ts))
+    """, (end_ts, start_ts, end_ts))
 
     rows = [dict(row) for row in cursor.fetchall()]
 
     for row in rows:
         earliest = row.pop('earliest_ever_timestamp')
         row['is_first_ever'] = earliest is not None and start_ts <= earliest < end_ts
+        row['first_heard_timestamp'] = earliest
 
     cursor.execute("""
         SELECT species_common, audio_filename FROM daily_best_clips WHERE detection_date = ?
@@ -713,3 +732,55 @@ def count_all_sessions_for_species(species_common: str) -> int:
     conn.close()
 
     return count
+
+
+# ----------------------------------------------------------------------------
+# Species media cache (rotating photos/descriptions)
+# ----------------------------------------------------------------------------
+
+def get_all_species_media() -> Dict[str, Dict]:
+    """
+    Get every cached species_media row, keyed by species_common.
+    photos_json/sections_json are left as JSON strings for the caller.
+    """
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM species_media")
+    rows = {row['species_common']: dict(row) for row in cursor.fetchall()}
+    conn.close()
+    return rows
+
+
+def upsert_species_media(species_common: str, photos_json: str, sections_json: str,
+                         wiki_title: Optional[str], fetched_at: int) -> None:
+    """
+    Insert or replace the cached media for one species.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO species_media (species_common, photos_json, sections_json, wiki_title, fetched_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(species_common) DO UPDATE SET
+            photos_json = excluded.photos_json,
+            sections_json = excluded.sections_json,
+            wiki_title = excluded.wiki_title,
+            fetched_at = excluded.fetched_at
+    """, (species_common, photos_json, sections_json, wiki_title, fetched_at))
+    conn.commit()
+    conn.close()
+
+
+def get_all_species_names() -> List[Dict]:
+    """
+    Every species ever detected, with its scientific name.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT species_common, MAX(species_scientific) FROM detections GROUP BY species_common
+    """)
+    rows = [{'species_common': r[0], 'species_scientific': r[1]} for r in cursor.fetchall()]
+    conn.close()
+    return rows

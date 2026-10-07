@@ -29,6 +29,7 @@ from database import (
 )
 from analyzer import analyze_audio, fetch_bird_info
 from notifications import send_first_ever_notification, send_push
+from species_media import start_background_refresh, request_refresh, apply_daily_media
 
 # Initialize FastAPI app
 app = FastAPI(title="BirdWatch", description="Backyard bird tracking system")
@@ -90,6 +91,7 @@ async def startup_event():
     print(f"Database: {DATABASE_PATH}")
 
     asyncio.create_task(watch_recorder_health())
+    start_background_refresh()
 
 
 async def watch_recorder_health():
@@ -229,6 +231,7 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
 
                 if count_all_sessions_for_species(species) == 1:
                     send_first_ever_notification(species, scientific_name)
+                    request_refresh(species, scientific_name)
 
             total_sessions_updated += 1
 
@@ -320,6 +323,7 @@ async def get_species():
     Get species summary with visit counts and last seen dates.
     """
     species = get_species_summary()
+    apply_daily_media(species, datetime.now().strftime('%Y-%m-%d'))
     return JSONResponse(species)
 
 
@@ -424,6 +428,7 @@ async def get_day_summary(date: str):
 
     start_ts, end_ts = bounds
     species = get_day_species_summary(date, start_ts, end_ts)
+    apply_daily_media(species, date)
     return JSONResponse({"date": date, "species": species})
 
 

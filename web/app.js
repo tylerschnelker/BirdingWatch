@@ -76,6 +76,53 @@ function shiftDateString(dateStr, deltaDays) {
     return `${yy}-${mm}-${dd}`;
 }
 
+// Escape text from outside sources (iNaturalist, Wikipedia) before it goes into innerHTML
+function escapeHtml(text) {
+    return String(text ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[c]);
+}
+
+// "First heard here Aug 24 · heard on 31 days" for a species day card
+function formatBackyardLine(item) {
+    if (item.is_first_ever || !item.first_heard_timestamp) return '';
+    const first = new Date(item.first_heard_timestamp * 1000);
+    const sameYear = first.getFullYear() === new Date().getFullYear();
+    const firstStr = first.toLocaleDateString('en-US', sameYear
+        ? { month: 'short', day: 'numeric' }
+        : { month: 'short', day: 'numeric', year: 'numeric' });
+    const days = item.days_heard || 1;
+    return `First heard here ${firstStr} · heard on ${days} day${days !== 1 ? 's' : ''}`;
+}
+
+// Today's description: a rotating Wikipedia section, or the stored intro as a fallback
+function renderFact(item) {
+    if (item.fact) {
+        return `
+            <div class="wiki-summary collapsed">
+                <span class="fact-label">${escapeHtml(item.fact.title)}</span>
+                ${escapeHtml(item.fact.text).replace(/\n\n/g, '<br><br>')}
+                <a class="fact-source" href="${escapeHtml(item.fact.link)}" target="_blank" rel="noopener">Wikipedia</a>
+            </div>
+            <button class="expand-button summary-toggle">Read more</button>
+        `;
+    }
+    if (item.wiki_summary) {
+        return `
+            <div class="wiki-summary collapsed">
+                ${escapeHtml(item.wiki_summary)}
+            </div>
+            <button class="expand-button summary-toggle">Read more</button>
+        `;
+    }
+    return '';
+}
+
+function renderPhotoCredit(credit) {
+    if (!credit) return '';
+    return `<a class="photo-credit" href="${escapeHtml(credit.link)}" target="_blank" rel="noopener">📷 ${escapeHtml(credit.observer)} · iNaturalist (${escapeHtml(credit.license)})</a>`;
+}
+
 // Create bird image element with fallback to silhouette
 function createBirdImage(imageUrl, size = 'large') {
     const img = document.createElement('div');
@@ -89,6 +136,7 @@ function createBirdImage(imageUrl, size = 'large') {
     if (imageUrl) {
         const imgEl = document.createElement('img');
         imgEl.src = imageUrl;
+        imgEl.loading = 'lazy';
         imgEl.alt = 'Bird';
         imgEl.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:8px;';
         imgEl.onerror = function() { this.parentElement.innerHTML = BIRD_SILHOUETTE; };
@@ -110,6 +158,7 @@ function renderSpeciesDayCard(item, dateStr) {
 
     const confidencePercent = Math.round(item.best_confidence * 100);
     const lastSeen = formatDate(item.last_seen_at);
+    const backyardLine = formatBackyardLine(item);
 
     if (item.is_first_ever) {
         card.classList.add('first-ever-card');
@@ -125,17 +174,14 @@ function renderSpeciesDayCard(item, dateStr) {
                 <span class="confidence-badge">Best confidence: ${confidencePercent}%</span>
                 <span class="detection-count-badge">🎵 ${item.total_calls} call${item.total_calls !== 1 ? 's' : ''}</span>
                 <span class="visit-count-badge">📍 ${item.visit_count} visit${item.visit_count !== 1 ? 's' : ''}</span>
+                ${renderPhotoCredit(item.photo_credit)}
             </div>
         </div>
         <div class="card-meta">
             <div class="detection-time"><span>🕐</span><span>Last: ${lastSeen}</span></div>
+            ${backyardLine ? `<div class="backyard-line"><span>🏡</span><span>${backyardLine}</span></div>` : ''}
         </div>
-        ${item.wiki_summary ? `
-            <div class="wiki-summary collapsed">
-                ${item.wiki_summary}
-            </div>
-            <button class="expand-button summary-toggle">Read more</button>
-        ` : ''}
+        ${renderFact(item)}
         <div class="audio-player-container">
             ${item.audio_filename
                 ? `<audio controls src="/api/audio/${item.audio_filename}" onerror="this.replaceWith(Object.assign(document.createElement('span'), {className: 'audio-unavailable-note', textContent: 'Audio no longer available'}))"></audio>`

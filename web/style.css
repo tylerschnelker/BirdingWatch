@@ -354,6 +354,40 @@ main {
     margin-bottom: 0.75rem;
 }
 
+.fact-label {
+    font-weight: 700;
+    color: #2d6a4f;
+    margin-right: 0.25rem;
+}
+
+.fact-label::after {
+    content: ' ·';
+}
+
+.fact-source {
+    color: #6c757d;
+    font-size: 0.75rem;
+    margin-left: 0.25rem;
+}
+
+.photo-credit {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 0.7rem;
+    color: #868e96;
+    text-decoration: none;
+}
+
+.photo-credit:hover {
+    text-decoration: underline;
+}
+
+.backyard-line {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
 .wiki-summary.collapsed {
     display: -webkit-box;
     -webkit-line-clamp: 2;
