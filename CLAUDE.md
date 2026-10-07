@@ -43,7 +43,10 @@ the user's home server ("homelab"), published only through a Cloudflare Tunnel; 
   `marysbackyardbirds.xyz` and `www` → `http://birdingwatch:8000`, everything
   else → 404. DNS is on Cloudflare (moved from Porkbun); TLS terminates at
   Cloudflare. The droplet's nginx and its `client_max_body_size` are gone.
-  Cloudflare's 100 MB upload limit is far above any clip.
+  Cloudflare's 100 MB upload limit is far above any clip. Cloudflare edge-caches `.js`/`.css`
+  for hours when the origin sends no Cache-Control, which hid a deploy's frontend changes;
+  `main.py`'s `no_cache_static` middleware now sends `no-cache` on `/static/`, and `index.html`'s
+  `?v=` query on app.js/style.css was bumped once (2026-10-07) to escape the stale edge copies.
 - **Deploys**: by hand, `scripts/deploy-homelab.sh` (pull `--ff-only`, rebuild,
   restart, wait for the healthcheck, check the public URL). It warns when
   isolation files changed. GitHub can't reach the homelab and there's no runner

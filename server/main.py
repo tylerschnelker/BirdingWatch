@@ -500,6 +500,20 @@ async def unsubscribe_push(request: Request):
     return JSONResponse({"status": "ok"})
 
 
+@app.middleware("http")
+async def no_cache_static(request: Request, call_next):
+    """
+    Make browsers and Cloudflare revalidate /static/ files on every load.
+    Without a Cache-Control header Cloudflare caches .js/.css at the edge for
+    hours, so a deploy's app.js/style.css didn't reach anyone until it expired.
+    Revalidation is cheap (StaticFiles answers If-None-Match with 304).
+    """
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 # Mount static files (web UI)
 # We'll mount the web/ directory as static files
 web_dir = Path(__file__).parent.parent / "web"
