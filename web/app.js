@@ -126,8 +126,8 @@ function renderPhotoCredit(credit) {
 // Create bird image element with fallback to silhouette
 function createBirdImage(imageUrl, size = 'large') {
     const img = document.createElement('div');
-    const width = size === 'large' ? 80 : 60;
-    const height = size === 'large' ? 80 : 60;
+    const width = size === 'large' ? 128 : 60;
+    const height = size === 'large' ? 128 : 60;
     
     img.style.width = `${width}px`;
     img.style.height = `${height}px`;
@@ -135,7 +135,8 @@ function createBirdImage(imageUrl, size = 'large') {
     
     if (imageUrl) {
         const imgEl = document.createElement('img');
-        imgEl.src = imageUrl;
+        // iNaturalist's "small" (240px) is soft at 128px on a phone; cards use "medium" (500px)
+        imgEl.src = size === 'large' ? imageUrl.replace(/\/small\.(jpe?g|png)$/, '/medium.$1') : imageUrl;
         imgEl.loading = 'lazy';
         imgEl.alt = 'Bird';
         imgEl.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:8px;';
@@ -196,12 +197,34 @@ function renderSpeciesDayCard(item, dateStr) {
     // Hawk"), so wire these up directly instead.
     card.querySelector('.visits-toggle').addEventListener('click', () => toggleVisits(item.species_common, dateStr, card));
 
+    const photo = card.querySelector('.bird-photo img');
+    if (photo) {
+        photo.addEventListener('click', () => openPhotoViewer(photo.src, item.species_common, item.photo_credit));
+    }
+
     const summaryToggle = card.querySelector('.summary-toggle');
     if (summaryToggle) {
         summaryToggle.addEventListener('click', () => toggleSummary(card));
     }
 
     return card;
+}
+
+// Full-screen view of a card's photo; tap anywhere to close
+function openPhotoViewer(src, speciesName, credit) {
+    const overlay = document.createElement('div');
+    overlay.className = 'photo-viewer';
+    overlay.innerHTML = `
+        <img src="${escapeHtml(src)}" alt="${escapeHtml(speciesName)}">
+        <div class="photo-viewer-caption">
+            <div class="photo-viewer-name">${escapeHtml(speciesName)}</div>
+            ${renderPhotoCredit(credit)}
+        </div>
+    `;
+    overlay.addEventListener('click', event => {
+        if (!event.target.closest('a')) overlay.remove();
+    });
+    document.body.appendChild(overlay);
 }
 
 // Toggle wiki summary expansion within a species day card
