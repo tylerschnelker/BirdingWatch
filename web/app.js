@@ -410,14 +410,28 @@ async function loadDayView() {
     const label = document.getElementById('current-date-label');
     const nextBtn = document.getElementById('next-day-btn');
 
+    const countEl = document.getElementById('day-species-count');
+
     if (label) label.textContent = formatDayLabel(currentViewedDate, serverTodayDate);
     if (nextBtn) nextBtn.disabled = currentViewedDate === serverTodayDate;
+    // Blank the count when switching days so the old day's number never sits
+    // under the new day's label; the 30s refresh of the same day keeps it.
+    if (countEl && countEl.dataset.date !== currentViewedDate) countEl.textContent = '';
 
     try {
         const response = await fetch(`/api/days/${currentViewedDate}`);
         const data = await response.json();
 
         container.innerHTML = '';
+
+        // /api/days/{date} returns one entry per species, so its length is the day's species count
+        const speciesCount = data.species ? data.species.length : 0;
+        if (countEl) {
+            countEl.dataset.date = currentViewedDate;
+            countEl.textContent = speciesCount === 0
+                ? (currentViewedDate === serverTodayDate ? 'No species heard yet' : 'No species heard')
+                : `${speciesCount} species heard`;
+        }
 
         if (!data.species || data.species.length === 0) {
             const dayLabel = formatDayLabel(currentViewedDate, serverTodayDate);

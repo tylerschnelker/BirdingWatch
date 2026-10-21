@@ -210,11 +210,28 @@ main {
     cursor: not-allowed;
 }
 
-.date-nav-label {
+.date-nav-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     min-width: 8rem;
+    line-height: 1.3;
+}
+
+.date-nav-label {
     text-align: center;
     font-weight: 600;
     color: #2d3436;
+}
+
+.day-species-count {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #2d6a4f;
+}
+
+.day-species-count:empty {
+    display: none;
 }
 
 /* Detection cards */
