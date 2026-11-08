@@ -7,6 +7,11 @@
     box-sizing: border-box;
 }
 
+/* Elements toggled with the hidden attribute stay hidden even when a class sets display */
+[hidden] {
+    display: none !important;
+}
+
 body {
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background-color: #f5f0e8;
@@ -21,7 +26,7 @@ body {
 header {
     background: linear-gradient(135deg, #2d6a4f 0%, #40916c 100%);
     color: white;
-    padding: 1.5rem 1rem;
+    padding: 0.9rem 1rem;
     text-align: center;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
@@ -33,13 +38,13 @@ header {
 }
 
 h1 {
-    font-size: 2rem;
+    font-size: 1.6rem;
     font-weight: 700;
     margin-bottom: 0.25rem;
 }
 
 .subtitle {
-    font-size: 1rem;
+    font-size: 0.9rem;
     opacity: 0.9;
     font-weight: 400;
 }
@@ -49,7 +54,7 @@ h1 {
     justify-content: center;
     align-items: center;
     gap: 0.5rem;
-    margin-top: 0.5rem;
+    margin-top: 0.3rem;
     font-size: 0.875rem;
     font-weight: 600;
 }
@@ -644,4 +649,533 @@ footer {
 .empty-state-subtext {
     font-size: 0.875rem;
     color: #b2bec3;
+}
+
+/* ------------------------------------------------------------------------
+   Birdbath (home tab): see birdbath.js. The scene's sky, water and night
+   tint come from CSS variables that the script sets as you swipe.
+   ------------------------------------------------------------------------ */
+.bath-scene {
+    --sky-top: #4a90da;
+    --sky-bottom: #bcdcf3;
+    --night: 0;
+    --water: #6f9bbd;
+    --bird-k: 1;
+    --perch-bottom: 50%;
+    position: relative;
+    height: clamp(290px, 80vw, 400px);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.bath-sky {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom, var(--sky-top), var(--sky-bottom) 55%);
+}
+
+.bath-sun {
+    position: absolute;
+    width: 46px;
+    height: 46px;
+    margin: -23px 0 0 -23px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff7d6 0 45%, #ffd36b 60%, rgba(255, 211, 107, 0) 72%);
+    transition: opacity 0.4s ease;
+}
+
+.bath-moon {
+    position: absolute;
+    top: 12%;
+    right: 14%;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    box-shadow: -7px 4px 0 0 #f1ecd8;
+    transform: rotate(-20deg);
+}
+
+.bath-stars {
+    position: absolute;
+    inset: 0;
+}
+
+.bath-stars i {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 3px rgba(255, 255, 255, 0.8);
+}
+
+.bath-landscape,
+.bath-landscape svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.bath-water {
+    fill: var(--water);
+}
+
+.bath-ripples ellipse {
+    transform-box: fill-box;
+    transform-origin: center;
+    opacity: 0;
+}
+
+.bird-at-bath .bath-ripples ellipse {
+    animation: bath-ripple 2.4s ease-out infinite;
+}
+
+.bird-at-bath .bath-ripples ellipse:nth-child(2) {
+    animation-delay: 1.2s;
+}
+
+@keyframes bath-ripple {
+    0% { transform: scale(0.3); opacity: 0.7; }
+    100% { transform: scale(2.6); opacity: 0; }
+}
+
+.bath-night {
+    position: absolute;
+    inset: 0;
+    background: #0b1236;
+    opacity: calc(var(--night) * 0.5);
+    mix-blend-mode: multiply;
+    pointer-events: none;
+}
+
+/* The swipeable row of birds sits over the whole scene, so a swipe anywhere works */
+.bath-track {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+}
+
+.bath-track::-webkit-scrollbar {
+    display: none;
+}
+
+.bath-spacer {
+    flex: 0 0 auto;
+}
+
+.bath-slot {
+    flex: 0 0 auto;
+    position: relative;
+    height: 100%;
+    scroll-snap-align: center;
+}
+
+.bath-bird-button {
+    all: unset;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.bath-bird {
+    position: absolute;
+    left: 50%;
+    bottom: var(--perch-bottom);
+    transform-origin: 50% 100%;
+    filter: brightness(calc(1 - var(--night) * 0.3));
+    transition: opacity 0.2s ease;
+    will-change: transform;
+}
+
+.bath-bird.medallion {
+    width: calc(124px * var(--bird-k));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.medallion-ring {
+    /* A fixed height, not aspect-ratio: a tall photo would stretch that into an oval */
+    width: 100%;
+    height: calc(124px * var(--bird-k));
+    border-radius: 50%;
+    padding: calc(4px * var(--bird-k));
+    background: #fffaf0;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
+}
+
+.medallion.first-ever .medallion-ring {
+    background: linear-gradient(135deg, #ffe08a, #e0a526);
+}
+
+.medallion-ring img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    pointer-events: none;
+}
+
+.medallion-feet {
+    display: flex;
+    gap: calc(14px * var(--bird-k));
+    height: calc(9px * var(--bird-k));
+}
+
+.medallion-feet i {
+    width: calc(3px * var(--bird-k));
+    background: #6b5b4b;
+    border-radius: 0 0 2px 2px;
+}
+
+.bath-bird.drawn {
+    /* The drawing's feet sit 53.5% across its box */
+    width: calc(196px * var(--bird-k));
+    margin-left: calc(-7px * var(--bird-k));
+    transform-origin: 53.5% 100%;
+}
+
+.bath-bird.drawn .bird-art {
+    display: block;
+    width: 100%;
+    overflow: visible;
+    margin-bottom: calc(-15px * var(--bird-k));
+}
+
+/* Notes float up while the call plays */
+.bath-slot.singing .bath-bird::before,
+.bath-slot.singing .bath-bird::after {
+    content: '\266A';
+    position: absolute;
+    top: 0;
+    right: 8%;
+    font-size: 22px;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    animation: bath-note 1.6s ease-out infinite;
+}
+
+.bath-slot.singing .bath-bird::after {
+    content: '\266B';
+    right: 26%;
+    animation-delay: 0.8s;
+}
+
+@keyframes bath-note {
+    0% { transform: translate(0, 0); opacity: 0; }
+    20% { opacity: 1; }
+    100% { transform: translate(14px, -46px); opacity: 0; }
+}
+
+.bath-clock {
+    position: absolute;
+    top: 12px;
+    left: 14px;
+    color: #fff;
+    font-size: 1.15rem;
+    font-weight: 700;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+}
+
+.bath-style-toggle {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    background: rgba(0, 0, 0, 0.28);
+    border-radius: 999px;
+    padding: 3px;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+.bath-style-toggle button {
+    border: none;
+    background: none;
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.3rem 0.65rem;
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.bath-style-toggle button.active {
+    background: rgba(255, 255, 255, 0.92);
+    color: #2d6a4f;
+}
+
+.bath-arrow {
+    position: absolute;
+    top: 82%;
+    width: 34px;
+    height: 34px;
+    margin-top: -17px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.75);
+    color: #2d6a4f;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.bath-arrow-prev { left: 8px; }
+.bath-arrow-next { right: 8px; }
+
+.bath-empty {
+    position: absolute;
+    top: 30%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.85);
+    color: #2d3436;
+    padding: 0.5rem 1rem;
+    border-radius: 999px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* Every visit of the day as a mark on one line; the current bird's are green */
+.bath-timeline {
+    margin: 0.9rem 0.25rem 0;
+}
+
+.bath-timeline-bar {
+    position: relative;
+    height: 22px;
+    cursor: pointer;
+}
+
+.bath-timeline-bar::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 10px;
+    height: 2px;
+    background: #ddd5c6;
+    border-radius: 1px;
+}
+
+.bath-timeline-bar i {
+    position: absolute;
+    top: 7px;
+    height: 8px;
+    margin-left: -3px;
+    border-radius: 4px;
+    background: #b9ae9a;
+}
+
+.bath-timeline-bar i.current {
+    top: 5px;
+    height: 12px;
+    background: #2d6a4f;
+    z-index: 1;
+}
+
+.bath-timeline-bar b {
+    position: absolute;
+    top: 0;
+    width: 2px;
+    height: 22px;
+    margin-left: -1px;
+    background: #e07a1e;
+    border-radius: 1px;
+}
+
+.bath-timeline-labels {
+    position: relative;
+    height: 1rem;
+    font-size: 0.7rem;
+    color: #8a8275;
+}
+
+.bath-timeline-labels span {
+    position: absolute;
+    transform: translateX(-50%);
+}
+
+.bath-info {
+    margin-top: 0.75rem;
+    background: white;
+    border-radius: 14px;
+    padding: 1rem 1.1rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.bath-first-ever {
+    display: inline-block;
+    margin-bottom: 0.4rem;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    background: #fff1c2;
+    color: #8a5a00;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.bath-info-top {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.bath-info-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.bath-name {
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #2d3436;
+}
+
+.bath-sub {
+    font-size: 0.9rem;
+    color: #636e72;
+}
+
+.bath-play {
+    flex: 0 0 auto;
+    width: 52px;
+    height: 52px;
+    border: none;
+    border-radius: 50%;
+    background: #2d6a4f;
+    cursor: pointer;
+    position: relative;
+    box-shadow: 0 2px 6px rgba(45, 106, 79, 0.35);
+}
+
+/* Play triangle, or pause bars while playing */
+.bath-play::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    margin: -10px 0 0 -6px;
+    border-style: solid;
+    border-width: 10px 0 10px 17px;
+    border-color: transparent transparent transparent #fff;
+}
+
+.bath-play.playing::before {
+    width: 6px;
+    height: 20px;
+    margin: -10px 0 0 -8px;
+    border: none;
+    background: #fff;
+    box-shadow: 10px 0 0 #fff;
+}
+
+.bath-play:disabled {
+    background: #c9c3b8;
+    box-shadow: none;
+    cursor: default;
+}
+
+.bath-backyard {
+    margin-top: 0.4rem;
+    font-size: 0.85rem;
+    color: #2d6a4f;
+}
+
+.bath-backyard:empty {
+    display: none;
+}
+
+.bath-info-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 0.6rem;
+}
+
+.bath-info-bottom .photo-credit {
+    margin: 0;
+    font-size: 0.72rem;
+}
+
+.bath-more {
+    margin-left: auto;
+    border: none;
+    background: #f0f4f2;
+    color: #2d6a4f;
+    font-weight: 600;
+    font-size: 0.85rem;
+    padding: 0.45rem 0.9rem;
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+/* Bottom sheet with the full card */
+body.sheet-open {
+    overflow: hidden;
+}
+
+.sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    background: rgba(0, 0, 0, 0);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    transition: background-color 0.25s ease;
+}
+
+.sheet-backdrop.open {
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.sheet {
+    position: relative;
+    width: 100%;
+    max-width: 640px;
+    max-height: 88vh;
+    overflow-y: auto;
+    background: #f5f0e8;
+    border-radius: 18px 18px 0 0;
+    padding: 2.6rem 0.75rem 1.25rem;
+    transform: translateY(100%);
+    transition: transform 0.25s ease;
+}
+
+.sheet-backdrop.open .sheet {
+    transform: translateY(0);
+}
+
+.sheet .detection-card {
+    margin: 0;
+}
+
+.sheet-close {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.75rem;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: #e6dfd2;
+    color: #2d3436;
+    font-size: 0.95rem;
+    cursor: pointer;
 }

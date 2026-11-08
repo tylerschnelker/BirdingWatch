@@ -328,7 +328,7 @@ async function deleteDetection(detectionId) {
             // Reload the whole day view so the parent card's counts/audio stay accurate
             await loadDayView();
 
-            // Refresh the species summary tab too, if it's visible
+            // Refresh the all-species tab too, if it's visible
             const speciesTab = document.querySelector('.tab-button[data-tab="species"]');
             if (speciesTab.classList.contains('active')) {
                 loadSpecies();
@@ -423,6 +423,7 @@ async function loadDayView() {
         const data = await response.json();
 
         container.innerHTML = '';
+        renderBirdbath(data, currentViewedDate, currentViewedDate === serverTodayDate);
 
         // /api/days/{date} returns one entry per species, so its length is the day's species count
         const speciesCount = data.species ? data.species.length : 0;
@@ -528,6 +529,10 @@ function setupTabs() {
             // Show corresponding tab content
             const tabId = button.getAttribute('data-tab');
             document.getElementById(`${tabId}-tab`).classList.add('active');
+
+            // The day arrows drive the birdbath and the list, not the all-species tab
+            document.getElementById('date-nav').hidden = tabId === 'species';
+            if (tabId !== 'birdbath') stopBathAudio();
         });
     });
 }
@@ -676,6 +681,7 @@ async function loadRecorderStatus() {
 async function init() {
     setupTabs();
     setupDateNav();
+    setupBirdbath();
     await initToday();
     loadDayView();
     loadSpecies();
@@ -687,7 +693,7 @@ async function init() {
     setInterval(() => {
         loadRecorderStatus();
         const activeTab = document.querySelector('.tab-button.active').getAttribute('data-tab');
-        if (activeTab === 'recent') {
+        if (activeTab === 'birdbath' || activeTab === 'recent') {
             if (currentViewedDate === serverTodayDate) {
                 loadDayView();
             }

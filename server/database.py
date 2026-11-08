@@ -572,7 +572,7 @@ def get_day_species_summary(detection_date: str, start_ts: int, end_ts: int) -> 
         best_confidence, last_seen_at, last_seen_timestamp, image_url,
         wiki_summary, all_time_sessions, is_first_ever, first_heard_timestamp,
         days_heard (distinct local days heard, up to and including this one),
-        audio_filename (nullable).
+        audio_filename (nullable), visits ([start_ts, end_ts] per visit, oldest first).
         Sorted so rarer species (fewer all-time sessions) surface first, with
         more recently-seen species as the tiebreaker.
     """
@@ -614,10 +614,24 @@ def get_day_species_summary(detection_date: str, start_ts: int, end_ts: int) -> 
     """, (detection_date,))
     audio_by_species = {row[0]: row[1] for row in cursor.fetchall()}
 
+    # Each visit's [start, end] for the birdbath's time-of-day placement and
+    # timeline. A visit that started before midnight is clamped to the day.
+    cursor.execute("""
+        SELECT species_common, first_detected_timestamp, last_detected_timestamp
+        FROM detections
+        WHERE last_detected_timestamp >= ? AND last_detected_timestamp < ?
+        ORDER BY first_detected_timestamp
+    """, (start_ts, end_ts))
+    visits_by_species = {}
+    for species, first_ts, last_ts in cursor.fetchall():
+        start = max(first_ts or last_ts, start_ts)
+        visits_by_species.setdefault(species, []).append([start, last_ts])
+
     conn.close()
 
     for row in rows:
         row['audio_filename'] = audio_by_species.get(row['species_common'])
+        row['visits'] = visits_by_species.get(row['species_common'], [])
 
     return rows
 

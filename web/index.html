@@ -9,10 +9,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🐦 BirdWatch - Your Backyard Bird Tracker</title>
-    <link rel="stylesheet" href="/static/style.css?v=3">
+    <link rel="stylesheet" href="/static/style.css?v=4">
     <link rel="icon" href="/static/icons/icon-192.png" type="image/png">
     <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-    <script src="/static/app.js?v=3"></script>
+    <script src="/static/app.js?v=4"></script>
+    <script src="/static/birds.js?v=4"></script>
+    <script src="/static/birdbath.js?v=4"></script>
 </head>
 <body>
     <header>
@@ -28,20 +30,62 @@
     </header>
 
     <nav class="tabs">
-        <button class="tab-button active" data-tab="recent">Recent Detections</button>
-        <button class="tab-button" data-tab="species">Species Summary</button>
+        <button class="tab-button active" data-tab="birdbath">Birdbath</button>
+        <button class="tab-button" data-tab="recent">List</button>
+        <button class="tab-button" data-tab="species">All species</button>
     </nav>
 
     <main>
-        <section id="recent-tab" class="tab-content active">
-            <div class="date-nav">
-                <button id="prev-day-btn" class="date-nav-button" aria-label="Previous day">&larr;</button>
-                <div class="date-nav-center">
-                    <span id="current-date-label" class="date-nav-label">Today</span>
-                    <span id="day-species-count" class="day-species-count"></span>
-                </div>
-                <button id="next-day-btn" class="date-nav-button" aria-label="Next day">&rarr;</button>
+        <div class="date-nav" id="date-nav">
+            <button id="prev-day-btn" class="date-nav-button" aria-label="Previous day">&larr;</button>
+            <div class="date-nav-center">
+                <span id="current-date-label" class="date-nav-label">Today</span>
+                <span id="day-species-count" class="day-species-count"></span>
             </div>
+            <button id="next-day-btn" class="date-nav-button" aria-label="Next day">&rarr;</button>
+        </div>
+
+        <section id="birdbath-tab" class="tab-content active">
+            <div id="bath-scene" class="bath-scene">
+                <div class="bath-sky">
+                    <div id="bath-stars" class="bath-stars"></div>
+                    <div id="bath-moon" class="bath-moon"></div>
+                    <div id="bath-sun" class="bath-sun"></div>
+                </div>
+                <div id="bath-landscape" class="bath-landscape"></div>
+                <div class="bath-night"></div>
+                <div id="bath-track" class="bath-track"></div>
+                <div class="bath-clock"><span id="bath-clock-time"></span></div>
+                <div class="bath-style-toggle" role="group" aria-label="Bird pictures">
+                    <button data-style="photo">Photos</button>
+                    <button data-style="drawn">Drawn</button>
+                </div>
+                <button id="bath-prev" class="bath-arrow bath-arrow-prev" aria-label="Earlier bird">&lsaquo;</button>
+                <button id="bath-next" class="bath-arrow bath-arrow-next" aria-label="Later bird">&rsaquo;</button>
+                <div id="bath-empty" class="bath-empty" hidden></div>
+            </div>
+            <div id="bath-timeline" class="bath-timeline">
+                <div id="bath-timeline-bar" class="bath-timeline-bar"></div>
+                <div id="bath-timeline-labels" class="bath-timeline-labels"></div>
+            </div>
+            <div id="bath-info" class="bath-info">
+                <div id="bath-first-ever" class="bath-first-ever" hidden>🎉 First time ever!</div>
+                <div class="bath-info-top">
+                    <div class="bath-info-text">
+                        <div id="bath-name" class="bath-name"></div>
+                        <div id="bath-sub" class="bath-sub"></div>
+                    </div>
+                    <button id="bath-play" class="bath-play" aria-label="Play call"></button>
+                </div>
+                <div id="bath-backyard" class="bath-backyard"></div>
+                <div class="bath-info-bottom">
+                    <span id="bath-credit"></span>
+                    <button id="bath-more" class="bath-more">About this bird &rsaquo;</button>
+                </div>
+            </div>
+        </section>
+
+        <section id="recent-tab" class="tab-content">
             <div id="detections-container" class="detections-feed">
                 <div class="loading">Loading detections...</div>
             </div>
