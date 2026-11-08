@@ -25,7 +25,6 @@ const SKY_STOPS = [
 
 const STARS = [[8, 9], [17, 22], [26, 6], [34, 17], [45, 8], [53, 25], [61, 12], [70, 4], [77, 20], [88, 10], [93, 28], [12, 33], [40, 30], [66, 34]];
 
-let bathStyle = localStorage.getItem('bathStyle') === 'drawn' ? 'drawn' : 'photo';
 const bath = {
     birds: [], date: null, isToday: false, signature: '',
     current: -1, target: 0, layout: null, framePending: false, audio: null,
@@ -142,8 +141,10 @@ function bathLandscapeSvg(dateStr) {
     </svg>`;
 }
 
+// The day's iNaturalist photo in a round frame; the drawing (birds.js) only
+// when there's no photo or it fails to load.
 function bathBirdArt(item) {
-    if (bathStyle === 'drawn' || !item.image_url) {
+    if (!item.image_url || item.photo_failed) {
         return `<div class="bath-bird drawn">${birdSvg(item.species_common)}</div>`;
     }
     // Cards use iNaturalist's 500px "medium"; the 240px "small" is soft on a phone.
@@ -160,7 +161,7 @@ function renderBirdbath(data, dateStr, isToday) {
     if (!scene) return;
 
     const birds = (data.species || []).slice().sort((a, b) => a.last_seen_timestamp - b.last_seen_timestamp);
-    const signature = [dateStr, bathStyle, ...birds.map(b =>
+    const signature = [dateStr, ...birds.map(b =>
         `${b.species_common}:${b.last_seen_timestamp}:${b.visit_count}:${b.image_url}`)].join('|');
     if (signature === bath.signature) {
         updateBathInfo(true);
@@ -195,8 +196,10 @@ function renderBirdbath(data, dateStr, isToday) {
         // A photo that fails to load falls back to the drawing.
         const img = slot.querySelector('img');
         if (img) img.addEventListener('error', () => {
-            slot.querySelector('.bath-bird').outerHTML = `<div class="bath-bird drawn">${birdSvg(birds[i].species_common)}</div>`;
+            birds[i].photo_failed = true;
+            slot.querySelector('.bath-bird').outerHTML = bathBirdArt(birds[i]);
             updateBathFrame();
+            if (i === bath.current) updateBathInfo(false);
         }, { once: true });
     });
 
@@ -407,7 +410,7 @@ function updateBathInfo(refreshOnly) {
     document.getElementById('bath-first-ever').hidden = !item.is_first_ever;
     const backyard = formatBackyardLine(item);
     document.getElementById('bath-backyard').textContent = backyard ? `🏡 ${backyard}` : '';
-    document.getElementById('bath-credit').innerHTML = bathStyle === 'photo' ? renderPhotoCredit(item.photo_credit) : '';
+    document.getElementById('bath-credit').innerHTML = item.photo_failed ? '' : renderPhotoCredit(item.photo_credit);
 
     const play = document.getElementById('bath-play');
     play.disabled = !item.audio_filename;
@@ -462,15 +465,6 @@ function openBirdSheet(item) {
     requestAnimationFrame(() => backdrop.classList.add('open'));
 }
 
-function setBathStyle(style) {
-    bathStyle = style;
-    localStorage.setItem('bathStyle', style);
-    document.querySelectorAll('.bath-style-toggle button').forEach(b =>
-        b.classList.toggle('active', b.dataset.style === style));
-    bath.signature = '';
-    renderBirdbath({ species: bath.birds }, bath.date, bath.isToday);
-}
-
 function setupBirdbath() {
     const scene = document.getElementById('bath-scene');
     if (!scene) return;
@@ -486,9 +480,5 @@ function setupBirdbath() {
         if (item) openBirdSheet(item);
     });
     document.getElementById('bath-timeline-bar').addEventListener('click', onTimelineTap);
-    document.querySelectorAll('.bath-style-toggle button').forEach(b => {
-        b.classList.toggle('active', b.dataset.style === bathStyle);
-        b.addEventListener('click', () => setBathStyle(b.dataset.style));
-    });
     new ResizeObserver(() => layoutBath()).observe(scene);
 }

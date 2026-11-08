@@ -72,10 +72,11 @@ Server (server/main.py, FastAPI; homelab Docker container behind a Cloudflare Tu
      — /api/detections (flat list) is unused by the frontend now but left in place
   -> serves web/ as static files and at "/"
 
-Web UI (web/index.html, app.js, style.css)
+Web UI (web/index.html, app.js, birdbath.js, birds.js, style.css)
   -> vanilla JS, no build step, no framework, hits the /api/* endpoints above
-  -> "Recent Detections" tab = day-grouped, species-grouped view (see below),
-     not a flat session feed
+  -> "Birdbath" tab (home) = the day's birds taking turns at a birdbath (see below)
+  -> "List" tab = day-grouped, species-grouped cards (see below), not a flat session feed
+  -> "All species" tab = /api/species
 ```
 
 ## Local dev
@@ -273,6 +274,32 @@ iNaturalist isn't hammered; page loads never wait on an API):
 - The day feed also returns `first_heard_timestamp` and `days_heard` ("🏡 First heard here May 30 ·
   heard on 45 days", counting days up to the viewed day; hidden on a first-ever card).
 - Text from these APIs goes through `escapeHtml()` in `app.js` (this site is public).
+
+## Birdbath home tab (2026-11-08)
+
+The user wanted a less list-like home screen. `web/birdbath.js` draws a backyard scene (sky,
+Front Range, fence, lawn, a stone birdbath; SVG in `bathLandscapeSvg`) and puts the viewed day's
+species in a horizontal scroll-snap row over it, ordered by **last heard**, so swiping left goes
+back in time and today opens on the most recent bird. The bird in the middle stands on the rim;
+the others wait on the fence and hop over as you swipe (`updateBathFrame` sets each bird's
+transform from the scroll position). The sky, sun, moon and stars follow the time between the
+two nearest birds (`sunAltitude` with a deliberately coarse Denver-area lat/lon; this site is
+public, so never put the real `LAT`/`LON` in frontend code). Grass and snow caps follow the month.
+- Birds are the day's iNaturalist photo in a round frame (the user chose photos over drawn birds).
+  `web/birds.js` draws a cartoon bird per species (families matched on the common name, plus
+  palettes for the regulars); it's only used when a species has no photo or the photo fails.
+- Below the scene: a timeline of every visit that day (tap to jump), then the middle bird's name,
+  last heard, visits, the "first heard here" line, ▶ for the day's retained clip, the photo credit
+  (required by the CC BY licenses), and "About this bird", which opens the List tab's card
+  (`renderSpeciesDayCard`) in a bottom sheet.
+- `/api/days/{date}` returns `visits` (`[start_ts, end_ts]` per session, oldest first) for this.
+- One fetch (`loadDayView` in `app.js`) feeds both the birdbath and the List tab, and the date
+  arrows drive both. A 30 s refresh of today re-renders only when the birds changed, keeping the
+  bird you're looking at (or following along if you were on the latest one).
+- Checking UI changes without a phone: run the image with the working tree mounted and a copy of
+  the DB (push subscriptions deleted, random `API_KEY`, no `.env`) in a throwaway container bound
+  to the Tailscale IP only, and screenshot at 390x844 with Playwright from another throwaway
+  container. Delete both and the DB copy afterwards.
 
 ## Config / environment
 

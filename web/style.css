@@ -888,34 +888,6 @@ footer {
     pointer-events: none;
 }
 
-.bath-style-toggle {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    display: flex;
-    background: rgba(0, 0, 0, 0.28);
-    border-radius: 999px;
-    padding: 3px;
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-}
-
-.bath-style-toggle button {
-    border: none;
-    background: none;
-    color: #fff;
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 0.3rem 0.65rem;
-    border-radius: 999px;
-    cursor: pointer;
-}
-
-.bath-style-toggle button.active {
-    background: rgba(255, 255, 255, 0.92);
-    color: #2d6a4f;
-}
-
 .bath-arrow {
     position: absolute;
     top: 82%;

@@ -1,4 +1,5 @@
-// Drawn birds for the birdbath's "Drawn" style. One side-view bird built from
+// Drawn birds: the birdbath's stand-in when a species has no photo or its
+// photo fails to load. One side-view bird built from
 // simple shapes and coloured per species: families (matched on the common
 // name) give the shape and fallback colours, and backyard regulars get their
 // own palettes. Every bird shares one viewBox with its feet at (61, 96), so
