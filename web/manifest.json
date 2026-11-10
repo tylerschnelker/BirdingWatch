@@ -4,9 +4,9 @@
     "description": "Your backyard bird tracker",
     "start_url": "/",
     "display": "standalone",
-    "background_color": "#f5f0e8",
-    "theme_color": "#2d6a4f",
-    "orientation": "portrait",
+    "background_color": "#f2f2f7",
+    "theme_color": "#f2f2f7",
+    "orientation": "any",
     "icons": [
         {
             "src": "/static/icons/icon-192.png",

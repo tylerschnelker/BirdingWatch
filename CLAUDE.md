@@ -296,6 +296,25 @@ public, so never put the real `LAT`/`LON` in frontend code). Grass and snow caps
 - One fetch (`loadDayView` in `app.js`) feeds both the birdbath and the List tab, and the date
   arrows drive both. A 30 s refresh of today re-renders only when the birds changed, keeping the
   bird you're looking at (or following along if you were on the latest one).
+- **Scene sizing (2026-11-10)**: the drawing scales to the scene's *height* (`layoutBath` sets the
+  SVG `viewBox` from the box's aspect); extra width shows more yard, since the scenery is drawn from
+  x = -400 to 800. Before this, a wide iPad box cropped the sky and birds off the top.
+- **Garden (2026-11-10)**: a border bed along the fence, a flagstone patio and two mirrored front beds.
+  Plants (`PLANTS` in birdbath.js) follow the month via `gardenSeason()`: Dec-Feb snowy shrubs and
+  seed heads, Mar crocuses, Apr-May tulips/daffodils, Jun-Aug coneflowers/black-eyed Susans/lavender,
+  Sep-Oct asters/mums, Nov grasses, berries and the last mums. The user chose seasons over always-in-bloom.
+
+## Look and layout (2026-11-10)
+
+iOS-style, requested so it feels like an Apple app (and works on the user's partner's iPad): system font,
+`--bg`/`--card`/`--label` CSS variables with a dark-mode block, a large title, a segmented control for
+the tabs, and white rounded cards. At >=700px the List tab is two columns and sheets open as centred cards;
+at >=1000px landscape the birdbath scene sits left with the bird's info (including the day's fact,
+`#bath-fact`) on the right. **Notifications live in Settings** (the gear opens `openSettings()` in app.js):
+an iOS switch for push, which on iPhone/iPad without Home Screen install explains how to install
+instead of hiding. The user didn't want a notifications button always on screen. `openSheet()` in app.js
+is the shared sheet for Settings and the bird card.
+
 - Checking UI changes without a phone: run the image with the working tree mounted and a copy of
   the DB (push subscriptions deleted, random `API_KEY`, no `.env`) in a throwaway container bound
   to the Tailscale IP only, and screenshot at 390x844 with Playwright from another throwaway

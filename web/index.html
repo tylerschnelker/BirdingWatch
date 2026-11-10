@@ -1,82 +1,91 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <link rel="manifest" href="/static/manifest.json">
-<meta name="theme-color" content="#2d6a4f">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="BirdWatch">
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🐦 BirdWatch - Your Backyard Bird Tracker</title>
-    <link rel="stylesheet" href="/static/style.css?v=4">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="BirdWatch">
+    <title>BirdWatch - Your Backyard Bird Tracker</title>
+    <link rel="stylesheet" href="/static/style.css?v=5">
     <link rel="icon" href="/static/icons/icon-192.png" type="image/png">
     <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-    <script src="/static/app.js?v=4"></script>
-    <script src="/static/birds.js?v=4"></script>
-    <script src="/static/birdbath.js?v=4"></script>
+    <script src="/static/app.js?v=5"></script>
+    <script src="/static/birds.js?v=5"></script>
+    <script src="/static/birdbath.js?v=5"></script>
 </head>
 <body>
-    <header>
-        <div class="header-content">
-            <h1>🐦 BirdWatch</h1>
-            <p class="subtitle">Your backyard bird tracker</p>
+    <header class="app-header">
+        <div class="header-titles">
+            <h1>BirdWatch</h1>
             <div id="recorder-status" class="live-indicator status-unknown" title="Backyard recorder status">
                 <span class="live-dot"></span>
                 <span id="recorder-status-text" class="live-text">Checking recorder…</span>
             </div>
-            <button id="notify-toggle-btn" class="notify-toggle" style="display:none;">🔔 Enable notifications</button>
         </div>
+        <button id="settings-btn" class="icon-button" aria-label="Settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.4 7.4 0 0 0 7 6.5l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 2.6-1.5l2.4 1 2-3.4-2-1.6Z"/></svg>
+        </button>
     </header>
 
-    <nav class="tabs">
-        <button class="tab-button active" data-tab="birdbath">Birdbath</button>
-        <button class="tab-button" data-tab="recent">List</button>
-        <button class="tab-button" data-tab="species">All species</button>
+    <nav class="tab-bar">
+        <div class="segmented" role="tablist">
+            <button class="tab-button active" data-tab="birdbath" role="tab">Birdbath</button>
+            <button class="tab-button" data-tab="recent" role="tab">List</button>
+            <button class="tab-button" data-tab="species" role="tab">All Species</button>
+        </div>
     </nav>
 
     <main>
         <div class="date-nav" id="date-nav">
-            <button id="prev-day-btn" class="date-nav-button" aria-label="Previous day">&larr;</button>
+            <button id="prev-day-btn" class="date-nav-button" aria-label="Previous day"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
             <div class="date-nav-center">
                 <span id="current-date-label" class="date-nav-label">Today</span>
                 <span id="day-species-count" class="day-species-count"></span>
             </div>
-            <button id="next-day-btn" class="date-nav-button" aria-label="Next day">&rarr;</button>
+            <button id="next-day-btn" class="date-nav-button" aria-label="Next day"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
         </div>
 
         <section id="birdbath-tab" class="tab-content active">
-            <div id="bath-scene" class="bath-scene">
-                <div class="bath-sky">
-                    <div id="bath-stars" class="bath-stars"></div>
-                    <div id="bath-moon" class="bath-moon"></div>
-                    <div id="bath-sun" class="bath-sun"></div>
-                </div>
-                <div id="bath-landscape" class="bath-landscape"></div>
-                <div class="bath-night"></div>
-                <div id="bath-track" class="bath-track"></div>
-                <div class="bath-clock"><span id="bath-clock-time"></span></div>
-                <button id="bath-prev" class="bath-arrow bath-arrow-prev" aria-label="Earlier bird">&lsaquo;</button>
-                <button id="bath-next" class="bath-arrow bath-arrow-next" aria-label="Later bird">&rsaquo;</button>
-                <div id="bath-empty" class="bath-empty" hidden></div>
-            </div>
-            <div id="bath-timeline" class="bath-timeline">
-                <div id="bath-timeline-bar" class="bath-timeline-bar"></div>
-                <div id="bath-timeline-labels" class="bath-timeline-labels"></div>
-            </div>
-            <div id="bath-info" class="bath-info">
-                <div id="bath-first-ever" class="bath-first-ever" hidden>🎉 First time ever!</div>
-                <div class="bath-info-top">
-                    <div class="bath-info-text">
-                        <div id="bath-name" class="bath-name"></div>
-                        <div id="bath-sub" class="bath-sub"></div>
+            <div class="bath-layout">
+                <div class="bath-stage">
+                    <div id="bath-scene" class="bath-scene">
+                        <div class="bath-sky">
+                            <div id="bath-stars" class="bath-stars"></div>
+                            <div id="bath-moon" class="bath-moon"></div>
+                            <div id="bath-sun" class="bath-sun"></div>
+                        </div>
+                        <div id="bath-landscape" class="bath-landscape"></div>
+                        <div class="bath-night"></div>
+                        <div id="bath-track" class="bath-track"></div>
+                        <div class="bath-clock"><span id="bath-clock-time"></span></div>
+                        <button id="bath-prev" class="bath-arrow bath-arrow-prev" aria-label="Earlier bird"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+                        <button id="bath-next" class="bath-arrow bath-arrow-next" aria-label="Later bird"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+                        <div id="bath-empty" class="bath-empty" hidden></div>
                     </div>
-                    <button id="bath-play" class="bath-play" aria-label="Play call"></button>
+                    <div id="bath-timeline" class="bath-timeline">
+                        <div id="bath-timeline-bar" class="bath-timeline-bar"></div>
+                        <div id="bath-timeline-labels" class="bath-timeline-labels"></div>
+                    </div>
                 </div>
-                <div id="bath-backyard" class="bath-backyard"></div>
-                <div class="bath-info-bottom">
-                    <span id="bath-credit"></span>
-                    <button id="bath-more" class="bath-more">About this bird &rsaquo;</button>
+                <div id="bath-info" class="bath-info">
+                    <div id="bath-first-ever" class="bath-first-ever" hidden>🎉 First time ever!</div>
+                    <div class="bath-info-top">
+                        <div class="bath-info-text">
+                            <div id="bath-name" class="bath-name"></div>
+                            <div id="bath-sub" class="bath-sub"></div>
+                        </div>
+                        <button id="bath-play" class="bath-play" aria-label="Play call"></button>
+                    </div>
+                    <div id="bath-backyard" class="bath-backyard"></div>
+                    <div id="bath-fact" class="bath-fact"></div>
+                    <div class="bath-info-bottom">
+                        <span id="bath-credit"></span>
+                        <button id="bath-more" class="bath-more">About this bird</button>
+                    </div>
                 </div>
             </div>
         </section>
@@ -94,9 +103,6 @@
         </section>
     </main>
 
-    <footer>
-        <p>BirdWatch - Powered by BirdNET-Analyzer</p>
-    </footer>
 <script>
     if ('serviceWorker' in navigator) {
         // Clean up the old mis-scoped registration (served from /static/sw.js,

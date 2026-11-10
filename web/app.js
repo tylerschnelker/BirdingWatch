@@ -537,6 +537,26 @@ function setupTabs() {
     });
 }
 
+// Sheet from the bottom (a centred card on an iPad) holding `content`
+function openSheet(content, className = '') {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'sheet-backdrop';
+    backdrop.innerHTML = `<div class="sheet ${className}" role="dialog" aria-modal="true"><button class="sheet-close" aria-label="Close">✕</button></div>`;
+    const sheet = backdrop.querySelector('.sheet');
+    sheet.appendChild(content);
+    const close = () => {
+        backdrop.classList.remove('open');
+        document.body.classList.remove('sheet-open');
+        setTimeout(() => backdrop.remove(), 250);
+    };
+    backdrop.addEventListener('click', event => { if (event.target === backdrop) close(); });
+    sheet.querySelector('.sheet-close').addEventListener('click', close);
+    document.body.appendChild(backdrop);
+    document.body.classList.add('sheet-open');
+    requestAnimationFrame(() => backdrop.classList.add('open'));
+    return sheet;
+}
+
 // Convert a base64url VAPID public key string into the Uint8Array format
 // pushManager.subscribe() requires for applicationServerKey.
 function urlBase64ToUint8Array(base64String) {
@@ -550,37 +570,29 @@ function urlBase64ToUint8Array(base64String) {
     return outputArray;
 }
 
-// Show/hide and label the notification toggle button based on browser
-// support and current subscription state. Stays hidden on browsers that
-// can't do push at all (e.g. iOS Safari unless installed to the home
-// screen) rather than showing a dead-end button.
-async function initPushUI() {
-    const btn = document.getElementById('notify-toggle-btn');
-    if (!btn) return;
+function pushSupported() {
+    return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
 
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        return;
-    }
+// iPadOS Safari reports itself as a Mac, so also check for touch
+function isAppleMobile() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
 
-    btn.style.display = '';
-
+async function getPushSubscription() {
     const registration = await navigator.serviceWorker.ready;
-    const existingSubscription = await registration.pushManager.getSubscription();
-    updateNotifyButton(btn, !!existingSubscription);
-
-    btn.addEventListener('click', () => toggleNotifications(btn));
+    return registration.pushManager.getSubscription();
 }
 
-function updateNotifyButton(btn, subscribed) {
-    btn.textContent = subscribed ? '🔕 Notifications on' : '🔔 Enable notifications';
-    btn.classList.toggle('notify-active', subscribed);
-}
-
-async function toggleNotifications(btn) {
+// Subscribe or unsubscribe this browser. Throws an Error whose message can be
+// shown to the user.
+async function setNotifications(on) {
     const registration = await navigator.serviceWorker.ready;
     const existingSubscription = await registration.pushManager.getSubscription();
 
-    if (existingSubscription) {
+    if (!on) {
+        if (!existingSubscription) return;
         try {
             await existingSubscription.unsubscribe();
             await fetch('/api/push/subscribe', {
@@ -591,40 +603,90 @@ async function toggleNotifications(btn) {
         } catch (error) {
             console.error('Error unsubscribing from notifications:', error);
         }
-        updateNotifyButton(btn, false);
         return;
     }
 
+    if (existingSubscription) return;
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
-        alert('Notifications were blocked. You can re-enable them in your browser/site settings.');
-        return;
+        throw new Error('Notifications are blocked for this site. You can allow them in your browser or device settings.');
     }
 
-    try {
-        const keyResponse = await fetch('/api/push/vapid-public-key');
-        if (!keyResponse.ok) {
-            alert("Notifications aren't set up on the server yet.");
-            return;
-        }
-        const { publicKey } = await keyResponse.json();
+    const keyResponse = await fetch('/api/push/vapid-public-key');
+    if (!keyResponse.ok) throw new Error("Notifications aren't set up on the server yet.");
+    const { publicKey } = await keyResponse.json();
 
+    try {
         const subscription = await registration.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey: urlBase64ToUint8Array(publicKey)
         });
-
         await fetch('/api/push/subscribe', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(subscription.toJSON())
         });
-
-        updateNotifyButton(btn, true);
     } catch (error) {
         console.error('Error subscribing to notifications:', error);
-        alert('Could not enable notifications. Please try again.');
+        throw new Error('Could not turn on notifications. Please try again.');
     }
+}
+
+const NOTIFY_ABOUT = 'Get a notification when a bird visits the backyard for the first time ever, or if the recorder goes offline.';
+
+// Settings sheet (the gear in the header): notifications and recorder status
+async function openSettings() {
+    const content = document.createElement('div');
+    content.className = 'settings';
+    content.innerHTML = `
+        <h2 class="sheet-title">Settings</h2>
+        <div class="group-label">Notifications</div>
+        <div class="group">
+            <label class="row">
+                <span class="row-title">Bird alerts</span>
+                <input type="checkbox" class="switch" id="notify-switch" role="switch">
+            </label>
+        </div>
+        <p class="group-footer" id="notify-footer"></p>
+        <div class="group-label">Backyard recorder</div>
+        <div class="group">
+            <div class="row">
+                <span class="row-title">Status</span>
+                <span class="row-value" id="settings-recorder"></span>
+            </div>
+        </div>
+        <p class="group-footer">Birds are identified from their calls with BirdNET.</p>
+    `;
+    content.querySelector('#settings-recorder').textContent = document.getElementById('recorder-status-text').textContent;
+    openSheet(content, 'sheet-settings');
+
+    const toggle = content.querySelector('#notify-switch');
+    const footer = content.querySelector('#notify-footer');
+    footer.textContent = NOTIFY_ABOUT;
+
+    if (!pushSupported()) {
+        toggle.disabled = true;
+        footer.textContent = isAppleMobile()
+            ? 'To get notifications on an iPad or iPhone, open this page in Safari, tap the Share button, choose “Add to Home Screen”, then open BirdWatch from the Home Screen and come back here.'
+            : "This browser doesn't support notifications.";
+        return;
+    }
+
+    toggle.disabled = true;
+    toggle.checked = !!(await getPushSubscription());
+    toggle.disabled = false;
+
+    toggle.addEventListener('change', async () => {
+        toggle.disabled = true;
+        try {
+            await setNotifications(toggle.checked);
+            footer.textContent = NOTIFY_ABOUT;
+        } catch (error) {
+            footer.textContent = error.message;
+        }
+        toggle.checked = !!(await getPushSubscription());
+        toggle.disabled = false;
+    });
 }
 
 function formatAgo(seconds) {
@@ -685,7 +747,7 @@ async function init() {
     await initToday();
     loadDayView();
     loadSpecies();
-    initPushUI();
+    document.getElementById('settings-btn').addEventListener('click', openSettings);
     loadRecorderStatus();
 
     // Auto-refresh every 30 seconds. Only the "today" view can change, so

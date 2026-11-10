@@ -80,30 +80,174 @@ function skyColors(alt) {
     return [last[1], last[2]];
 }
 
-// The landscape and the bath, in BATH_GRID units. Grass and snow follow the season.
+// The garden's plants, each drawn around its base at (0, 0), growing up (-y).
+const LEAF = '#5e8a46';
+const LEAF_DARK = '#466f37';
+const STRAW = '#6b5640';
+
+function plantStem(dx, h, color = LEAF) {
+    return `<path d="M0,0 Q${(dx * 0.25).toFixed(1)},${(-h * 0.55).toFixed(1)} ${dx},${-h}" stroke="${color}" stroke-width="1.3" fill="none" stroke-linecap="round"/>`;
+}
+
+function plantLeaves(color = LEAF) {
+    return `<path d="M0,0 C-9,-3 -12,-8 -13,-11 C-7,-10 -3,-6 0,0 Z M0,0 C8,-2 11,-7 12,-10 C6,-9 2,-5 0,0 Z" fill="${color}"/>`;
+}
+
+function ring(count, radius, rx, ry, color, start = 0, span = 360) {
+    let out = '';
+    for (let i = 0; i < count; i++) {
+        const a = start + (span * i) / (span === 360 ? count : count - 1);
+        const rad = a * Math.PI / 180;
+        const x = (Math.cos(rad) * radius).toFixed(1), y = (Math.sin(rad) * radius).toFixed(1);
+        out += `<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" transform="rotate(${a.toFixed(0)} ${x} ${y})" fill="${color}"/>`;
+    }
+    return out;
+}
+
+const PLANTS = {
+    coneflower: () => plantLeaves() + [[-7, 26], [2, 33], [9, 22]].map(([dx, h]) =>
+        plantStem(dx, h) + `<g transform="translate(${dx} ${-h})">${ring(7, 4.2, 4.4, 1.5, '#c86fa8', 5, 170)}<ellipse cy="-1" rx="2.8" ry="3.1" fill="#8a4a1c"/></g>`).join(''),
+    susan: () => plantLeaves() + [[-6, 20], [4, 26], [10, 17]].map(([dx, h]) =>
+        plantStem(dx, h) + `<g transform="translate(${dx} ${-h})">${ring(10, 3.8, 3.6, 1.4, '#f2b01e')}<circle r="2.3" fill="#3a2414"/></g>`).join(''),
+    lavender: () => [-2, -1, 0, 1, 2].map(i => {
+        const dx = i * 4.5, h = 22 + (2 - Math.abs(i)) * 4;
+        let buds = '';
+        for (let k = 0; k < 6; k++) buds += `<circle cx="${(dx * (1 - k * 0.04)).toFixed(1)}" cy="${(-h + k * 2.2).toFixed(1)}" r="${(1.9 - k * 0.12).toFixed(2)}" fill="#8b78c9"/>`;
+        return plantStem(dx, h, '#7f9a6c') + buds;
+    }).join(''),
+    tulip: color => `<path d="M0,0 C-6,-6 -8,-14 -6,-20 C-3,-12 -1,-6 0,0 Z M0,0 C6,-5 8,-12 7,-18 C4,-11 1,-6 0,0 Z" fill="${LEAF}"/>` +
+        [[-5, 23], [3, 28], [9, 21]].map(([dx, h]) => plantStem(dx, h) +
+            `<path transform="translate(${dx} ${-h})" d="M-3.6,0 C-4.4,-5 -3.4,-8 -1.8,-8.4 L0,-6 L1.8,-8.4 C3.4,-8 4.4,-5 3.6,0 C2,1.6 -2,1.6 -3.6,0 Z" fill="${color}"/>`).join(''),
+    daffodil: () => plantLeaves() + [[-5, 22], [5, 26], [0, 17]].map(([dx, h]) => plantStem(dx, h) +
+        `<g transform="translate(${dx} ${-h})">${ring(6, 3, 3.2, 1.8, '#fbe58e')}<circle r="2.2" fill="#f4a522"/></g>`).join(''),
+    crocus: () => [[-7, 7, '#9b7fd1'], [0, 9, '#f1ecf7'], [6, 7, '#9b7fd1'], [12, 5, '#b49be0']].map(([dx, h, c]) =>
+        `<path d="M${dx},0 L${dx},${-h}" stroke="${LEAF}" stroke-width="1"/><path transform="translate(${dx} ${-h})" d="M-2.2,0 C-2.6,-3.5 -1,-5.5 0,-5.5 C1,-5.5 2.6,-3.5 2.2,0 Z" fill="${c}"/>`).join(''),
+    aster: () => {
+        let dots = '';
+        for (let i = 0; i < 16; i++) {
+            const x = Math.sin(i * 2.4) * 11 * (0.4 + (i % 4) / 6), y = -10 - Math.cos(i * 1.7) * 6 - (i % 3);
+            dots += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.3" fill="#a48bd8"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="0.8" fill="#f5c542"/>`;
+        }
+        return `<ellipse cy="-9" rx="14" ry="10" fill="${LEAF_DARK}"/>` + dots;
+    },
+    mum: color => {
+        // Small blooms packed over a dome
+        let dots = '';
+        for (let row = 0; row < 4; row++) {
+            const y = -4 - row * 4.2, half = 13.5 * Math.sqrt(1 - (row / 4.4) ** 2);
+            for (let x = -half + (row % 2) * 1.8; x <= half; x += 3.8) {
+                const jx = x + Math.sin(x * 3 + row) * 0.6, jy = y + Math.cos(x * 2 + row) * 0.7;
+                dots += `<circle cx="${jx.toFixed(1)}" cy="${jy.toFixed(1)}" r="2.4" fill="${color}"/><circle cx="${jx.toFixed(1)}" cy="${jy.toFixed(1)}" r="0.7" fill="#5a2a12" opacity="0.5"/>`;
+            }
+        }
+        return `<ellipse cy="-7" rx="15" ry="9" fill="${LEAF_DARK}"/>` + dots;
+    },
+    grass: (color, plumes) => [-12, -8, -4, -1, 2, 5, 9, 13].map((dx, i) => {
+        const h = 26 - Math.abs(dx) * 0.9 + (i % 2) * 3;
+        return `<path d="M0,0 Q${(dx * 0.2).toFixed(1)},${(-h * 0.7).toFixed(1)} ${dx},${(-h).toFixed(1)}" stroke="${color}" stroke-width="1.5" fill="none" stroke-linecap="round"/>` +
+            (plumes && i % 2 ? `<ellipse cx="${dx}" cy="${(-h - 3).toFixed(1)}" rx="1.9" ry="4.5" transform="rotate(${dx * 3} ${dx} ${(-h - 3).toFixed(1)})" fill="#e8d6a6"/>` : '');
+    }).join(''),
+    seedheads: () => [[-8, 20], [-2, 27], [4, 23], [10, 18]].map(([dx, h]) =>
+        plantStem(dx, h, STRAW) + `<circle cx="${dx}" cy="${-h}" r="2.5" fill="#3d2b1f"/>`).join(''),
+    shrub: (color, snow, berries) => {
+        let out = `<ellipse cy="-12" rx="16" ry="13" fill="${color}"/><ellipse cx="-5" cy="-17" rx="8" ry="5" fill="#ffffff" opacity="0.1"/>`;
+        if (berries) {
+            for (let i = 0; i < 9; i++) out += `<circle cx="${(Math.sin(i * 2.1) * 11).toFixed(1)}" cy="${(-12 + Math.cos(i * 1.3) * 7).toFixed(1)}" r="1.5" fill="#c43a2f"/>`;
+        }
+        if (snow) out += '<path d="M-14,-17 C-11,-27 11,-27 14,-17 C9,-20 4,-18 0,-20 C-5,-18 -9,-20 -14,-17 Z" fill="#f4f6fa"/>';
+        return out;
+    },
+};
+
+// What grows in each bed by month: [back border mix, front bed mix].
+function gardenSeason(month) {
+    const P = PLANTS;
+    const green = () => P.grass('#7f9f5a', false);
+    const straw = () => P.grass('#c8a96b', true);
+    const box = (snow, berries) => () => P.shrub(snow ? '#3f5f3a' : '#43703f', snow, berries);
+    if (month === 12 || month <= 2) {
+        return [[box(true), P.seedheads, straw, box(true, true), P.seedheads, straw],
+            [box(true, true), straw, P.seedheads, box(true), straw, P.seedheads]];
+    }
+    if (month === 3) {
+        return [[P.crocus, box(), straw, P.crocus, P.seedheads, box()],
+            [P.crocus, box(), P.crocus, straw, box(), P.crocus]];
+    }
+    if (month <= 5) {
+        const red = () => P.tulip('#e5484d'), pink = () => P.tulip('#f28cb1'), yellow = () => P.tulip('#f7c948');
+        return [[red, P.daffodil, pink, box(), P.daffodil, yellow, green, red],
+            [red, P.daffodil, pink, yellow, box(), red, P.daffodil, pink]];
+    }
+    if (month <= 8) {
+        return [[P.lavender, P.susan, P.coneflower, green, P.coneflower, P.lavender, box(), P.susan],
+            [P.coneflower, P.susan, P.lavender, green, P.coneflower, box(), P.susan, P.lavender]];
+    }
+    const orange = () => P.mum('#e07a2e'), rust = () => P.mum('#b5452b'), gold = () => P.mum('#e8b630');
+    if (month <= 10) {
+        return [[P.aster, orange, straw, rust, P.aster, box(), gold, straw],
+            [orange, P.aster, rust, straw, gold, P.aster, box(), orange]];
+    }
+    // November: the last mums, grasses gone to seed, berries
+    return [[P.seedheads, straw, rust, box(false, true), P.seedheads, box(), straw],
+        [rust, straw, box(false, true), P.seedheads, straw, box(), rust]];
+}
+
+function plantAt(x, y, scale, draw) {
+    return `<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${scale.toFixed(2)})">${draw()}</g>`;
+}
+
+// The landscape and the bath, in BATH_GRID units. The bath is at x = 200; the
+// scenery runs from -400 to 800 so a wide screen shows more yard, not a crop.
+// Grass, snow and the garden follow the season.
 function bathLandscapeSvg(dateStr) {
     const month = Number(dateStr.slice(5, 7));
     const dormant = month >= 11 || month <= 3;
     const snowy = month >= 10 || month <= 5;
     const grassTop = dormant ? '#a9a66f' : '#7fae57';
     const grassBottom = dormant ? '#8c8a55' : '#5f9142';
+    const [backMix, frontMix] = gardenSeason(month);
 
-    const peaks = [[0, 172], [28, 152], [52, 162], [80, 128], [104, 148], [130, 120], [152, 140], [178, 114], [202, 136], [228, 122], [252, 144], [278, 110], [302, 132], [328, 124], [354, 148], [380, 128], [400, 140]];
-    const ridge = `M0,210 L${peaks.map(p => p.join(',')).join(' L')} L400,210 Z`;
+    const base = [[0, 172], [28, 152], [52, 162], [80, 128], [104, 148], [130, 120], [152, 140], [178, 114], [202, 136], [228, 122], [252, 144], [278, 110], [302, 132], [328, 124], [354, 148], [380, 128]];
+    const peaks = [-400, 0, 400].flatMap(shift => base.map(([x, y]) => [x + shift, y])).concat([[800, 150]]);
+    const ridge = `M-400,210 L${peaks.map(p => p.join(',')).join(' L')} L800,210 Z`;
     const snow = snowy
         ? peaks.filter(([, y]) => y < 132).map(([x, y]) =>
             `M${x - 9},${y + 10} L${x},${y} L${x + 9},${y + 11} L${x + 4},${y + 8} L${x},${y + 12} L${x - 4},${y + 8} Z`).join(' ')
         : '';
 
+    let hills = 'M-400,230';
+    for (let x = -400; x <= 800; x += 5) {
+        hills += ` L${x},${(190 + 8 * Math.sin(x / 37) + 5 * Math.sin(x / 91)).toFixed(1)}`;
+    }
+    hills += ' L800,230 Z';
+
     let boards = '';
-    for (let x = -4; x < 404; x += 19) {
+    for (let x = -404; x < 804; x += 19) {
         boards += `<rect x="${x}" y="${BATH_GRID.perch + 2}" width="17.5" height="48" rx="1"/>`;
     }
 
     const pine = (x, y, s) => `<path d="M${x},${y - 60 * s} L${x - 16 * s},${y - 22 * s} L${x - 7 * s},${y - 24 * s} L${x - 22 * s},${y} L${x + 22 * s},${y} L${x + 7 * s},${y - 24 * s} L${x + 16 * s},${y - 22 * s} Z"/>`;
 
+    // Border bed along the fence
+    let back = '';
+    for (let i = 0, x = -392; x <= 792; i++, x += 26) {
+        back += plantAt(x, 250 + ((i * 7) % 5) - 2, 0.75 + ((i * 13) % 5) * 0.06, backMix[i % backMix.length]);
+    }
+
+    // Two curved beds in front, either side of the bath, mirrored around it
+    const frontSpots = [];
+    [[330, 1.05, 40], [354, 1.25, 46], [376, 1.45, 54]].forEach(([y, s, step], row) => {
+        for (let x = 98 - row * 9; x > -400; x -= step) frontSpots.push([x, y, s, row], [400 - x + (row % 2) * 6, y, s, row]);
+    });
+    // Left and right step through the mix at different rates, so each bed gets every plant
+    const front = frontSpots.map(([x, y, s, row], i) => {
+        const k = Math.floor(i / 2) + row * 3;
+        return plantAt(x, y, s, frontMix[(i % 2 ? k * 5 + 2 : k) % frontMix.length]);
+    }).join('');
+    const bed = 'M-400,312 C-150,302 40,304 100,316 C126,322 136,352 128,380 L-400,380 Z';
+
     return `
-    <svg class="bath-land" viewBox="0 0 ${BATH_GRID.w} ${BATH_GRID.h}" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+    <svg class="bath-land" viewBox="0 0 ${BATH_GRID.w} ${BATH_GRID.h}" preserveAspectRatio="xMidYMax meet" aria-hidden="true">
         <defs>
             <linearGradient id="bath-grass" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0" stop-color="${grassTop}"/><stop offset="1" stop-color="${grassBottom}"/>
@@ -114,19 +258,26 @@ function bathLandscapeSvg(dateStr) {
             <linearGradient id="bath-far" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0" stop-color="#8d9fbb"/><stop offset="1" stop-color="#a7b5c8"/>
             </linearGradient>
+            <linearGradient id="bath-mulch" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#6e5340"/><stop offset="1" stop-color="#4f3a2c"/>
+            </linearGradient>
         </defs>
         <path d="${ridge}" fill="url(#bath-far)"/>
         <path d="${snow}" fill="#f4f6fa" opacity="0.9"/>
-        <path d="M0,206 C40,180 92,188 132,192 C172,196 214,178 262,184 C312,190 352,178 400,188 L400,230 L0,230 Z" fill="#6c7f63"/>
-        <g fill="#3f5a45">${pine(30, 200, 1)}${pine(58, 200, 0.75)}${pine(352, 200, 1.1)}${pine(381, 200, 0.7)}</g>
+        <path d="${hills}" fill="#6c7f63"/>
+        <g fill="#3f5a45">${pine(-120, 200, 0.9)}${pine(-90, 200, 0.65)}${pine(30, 200, 1)}${pine(58, 200, 0.75)}${pine(352, 200, 1.1)}${pine(381, 200, 0.7)}${pine(500, 200, 0.95)}${pine(528, 200, 0.7)}</g>
         <g fill="#b48b62" stroke="#94704d" stroke-width="1">${boards}</g>
-        <rect x="-4" y="${BATH_GRID.perch - 2}" width="408" height="5" rx="1.5" fill="#8f6a48"/>
-        <rect x="0" y="238" width="400" height="142" fill="url(#bath-grass)"/>
-        <g fill="#4f7a45" opacity="0.85">
-            <ellipse cx="20" cy="240" rx="34" ry="14"/><ellipse cx="62" cy="242" rx="24" ry="10"/>
-            <ellipse cx="382" cy="240" rx="36" ry="15"/><ellipse cx="340" cy="243" rx="20" ry="9"/>
+        <rect x="-404" y="${BATH_GRID.perch - 2}" width="1208" height="5" rx="1.5" fill="#8f6a48"/>
+        <rect x="-400" y="238" width="1200" height="142" fill="url(#bath-grass)"/>
+        <path d="M-400,236 L800,236 L800,252 C600,258 400,254 200,257 C0,254 -200,258 -400,252 Z" fill="url(#bath-mulch)"/>
+        ${back}
+        <ellipse cx="200" cy="352" rx="118" ry="21" fill="#c3b8a6"/>
+        <g fill="#d6ccbb" stroke="#a99d8a" stroke-width="0.8">
+            <path d="M96,350 L128,341 L150,347 L138,358 L104,360 Z"/><path d="M156,336 L196,333 L190,343 L160,345 Z"/>
+            <path d="M204,333 L244,336 L240,345 L210,343 Z"/><path d="M250,347 L272,341 L304,350 L296,360 L262,358 Z"/>
+            <path d="M144,362 L172,358 L178,369 L150,371 Z"/><path d="M222,358 L256,362 L250,371 L224,369 Z"/>
         </g>
-        <ellipse cx="200" cy="356" rx="74" ry="9" fill="rgba(0,0,0,0.16)"/>
+        <ellipse cx="200" cy="355" rx="62" ry="8" fill="rgba(0,0,0,0.14)"/>
         <path d="M170,354 L230,354 L221,337 L179,337 Z" fill="url(#bath-stone)"/>
         <ellipse cx="200" cy="337" rx="21" ry="4" fill="#b7b0a4"/>
         <path d="M187,337 C191,314 193,293 190,276 L210,276 C207,293 209,314 213,337 Z" fill="url(#bath-stone)"/>
@@ -138,6 +289,9 @@ function bathLandscapeSvg(dateStr) {
             <ellipse cx="200" cy="${BATH_GRID.rim + 6}" rx="22" ry="3.2"/>
             <ellipse cx="200" cy="${BATH_GRID.rim + 6}" rx="22" ry="3.2"/>
         </g>
+        <path d="${bed}" fill="url(#bath-mulch)" stroke="#8b7a66" stroke-width="2"/>
+        <path d="${bed}" transform="matrix(-1 0 0 1 400 0)" fill="url(#bath-mulch)" stroke="#8b7a66" stroke-width="2"/>
+        ${front}
     </svg>`;
 }
 
@@ -222,14 +376,18 @@ function layoutBath() {
     const w = scene.clientWidth, h = scene.clientHeight;
     if (!w || !h) return;
 
-    const scale = Math.max(w / BATH_GRID.w, h / BATH_GRID.h);
-    const offsetY = h - BATH_GRID.h * scale;
-    const slotWidth = Math.round(w * BATH_SLOT);
+    // Fit the scene's height; a wider or narrower box shows more or less yard
+    // to the sides, so the fence and the birds never get cropped off the top.
+    const scale = h / BATH_GRID.h;
+    const viewWidth = w / scale;
+    const svg = scene.querySelector('.bath-land');
+    if (svg) svg.setAttribute('viewBox', `${(BATH_GRID.w - viewWidth) / 2} 0 ${viewWidth} ${BATH_GRID.h}`);
+    const slotWidth = Math.round(Math.min(w * BATH_SLOT, h * 0.5));
     bath.layout = {
         w, h, scale, slotWidth,
-        perch: offsetY + BATH_GRID.perch * scale,
-        rim: offsetY + BATH_GRID.rim * scale,
-        horizon: offsetY + BATH_GRID.horizon * scale,
+        perch: BATH_GRID.perch * scale,
+        rim: BATH_GRID.rim * scale,
+        horizon: BATH_GRID.horizon * scale,
     };
 
     scene.style.setProperty('--bird-k', Math.min(scale, 1.35));
@@ -411,6 +569,11 @@ function updateBathInfo(refreshOnly) {
     const backyard = formatBackyardLine(item);
     document.getElementById('bath-backyard').textContent = backyard ? `🏡 ${backyard}` : '';
     document.getElementById('bath-credit').innerHTML = item.photo_failed ? '' : renderPhotoCredit(item.photo_credit);
+    // Shown beside the scene on an iPad, where there's room for it
+    const fact = item.fact
+        ? `<b>${escapeHtml(item.fact.title)} ·</b> ${escapeHtml(item.fact.text).replace(/\n\n/g, '<br><br>')}`
+        : escapeHtml(item.wiki_summary || '');
+    document.getElementById('bath-fact').innerHTML = fact;
 
     const play = document.getElementById('bath-play');
     play.disabled = !item.audio_filename;
@@ -448,21 +611,7 @@ function stopBathAudio() {
 // The full card (photo, credit, description, call, visits) in a sheet from the bottom.
 function openBirdSheet(item) {
     stopBathAudio();
-    const backdrop = document.createElement('div');
-    backdrop.className = 'sheet-backdrop';
-    backdrop.innerHTML = '<div class="sheet" role="dialog" aria-modal="true"><button class="sheet-close" aria-label="Close">✕</button></div>';
-    const sheet = backdrop.querySelector('.sheet');
-    sheet.appendChild(renderSpeciesDayCard(item, bath.date));
-    const close = () => {
-        backdrop.classList.remove('open');
-        document.body.classList.remove('sheet-open');
-        setTimeout(() => backdrop.remove(), 250);
-    };
-    backdrop.addEventListener('click', event => { if (event.target === backdrop) close(); });
-    sheet.querySelector('.sheet-close').addEventListener('click', close);
-    document.body.appendChild(backdrop);
-    document.body.classList.add('sheet-open');
-    requestAnimationFrame(() => backdrop.classList.add('open'));
+    openSheet(renderSpeciesDayCard(item, bath.date));
 }
 
 function setupBirdbath() {
