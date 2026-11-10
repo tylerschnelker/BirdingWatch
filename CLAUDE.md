@@ -304,6 +304,11 @@ public, so never put the real `LAT`/`LON` in frontend code). Grass and snow caps
   seed heads, Mar crocuses, Apr-May tulips/daffodils, Jun-Aug coneflowers/black-eyed Susans/lavender,
   Sep-Oct asters/mums, Nov grasses, berries and the last mums. The user chose seasons over always-in-bloom.
 
+- Checking UI changes without a phone: run the image with the working tree mounted and a copy of
+  the DB (push subscriptions deleted, random `API_KEY`, no `.env`) in a throwaway container bound
+  to the Tailscale IP only, and screenshot at 390x844 with Playwright from another throwaway
+  container. Delete both and the DB copy afterwards.
+
 ## Look and layout (2026-11-10)
 
 iOS-style, requested so it feels like an Apple app (and works on the user's partner's iPad): system font,
@@ -314,11 +319,6 @@ at >=1000px landscape the birdbath scene sits left with the bird's info (includi
 an iOS switch for push, which on iPhone/iPad without Home Screen install explains how to install
 instead of hiding. The user didn't want a notifications button always on screen. `openSheet()` in app.js
 is the shared sheet for Settings and the bird card.
-
-- Checking UI changes without a phone: run the image with the working tree mounted and a copy of
-  the DB (push subscriptions deleted, random `API_KEY`, no `.env`) in a throwaway container bound
-  to the Tailscale IP only, and screenshot at 390x844 with Playwright from another throwaway
-  container. Delete both and the DB copy afterwards.
 
 ## Config / environment
 
