@@ -27,6 +27,7 @@ const STARS = [[8, 9], [17, 22], [26, 6], [34, 17], [45, 8], [53, 25], [61, 12],
 
 const bath = {
     birds: [], date: null, isToday: false, signature: '',
+    weather: null, weatherDate: null, weatherFetched: 0,
     current: -1, target: 0, layout: null, framePending: false, audio: null,
 };
 
@@ -60,10 +61,19 @@ function sunAltitude(ts) {
     return Math.asin(Math.sin(lat) * Math.sin(dec) + Math.cos(lat) * Math.cos(dec) * Math.cos(hourAngle)) / rad;
 }
 
+function colorChannels(c) {
+    if (c[0] === '#') {
+        const n = parseInt(c.slice(1), 16);
+        return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    return c.match(/\d+/g).map(Number);
+}
+
+// Mix two colours (#hex or rgb()) t of the way from a to b
 function mixHex(a, b, t) {
-    const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
-    const ch = shift => Math.round(((pa >> shift) & 255) * (1 - t) + ((pb >> shift) & 255) * t);
-    return `rgb(${ch(16)}, ${ch(8)}, ${ch(0)})`;
+    const pa = colorChannels(a), pb = colorChannels(b);
+    const ch = i => Math.round(pa[i] * (1 - t) + pb[i] * t);
+    return `rgb(${ch(0)}, ${ch(1)}, ${ch(2)})`;
 }
 
 function skyColors(alt) {
@@ -318,6 +328,7 @@ function renderBirdbath(data, dateStr, isToday) {
     const signature = [dateStr, ...birds.map(b =>
         `${b.species_common}:${b.last_seen_timestamp}:${b.visit_count}:${b.image_url}`)].join('|');
     if (signature === bath.signature) {
+        loadBathWeather(dateStr, isToday);
         updateBathInfo(true);
         return;
     }
@@ -331,6 +342,7 @@ function renderBirdbath(data, dateStr, isToday) {
     Object.assign(bath, { birds, date: dateStr, isToday, signature, current: -1 });
     stopBathAudio();
 
+    loadBathWeather(dateStr, isToday);
     document.getElementById('bath-landscape').innerHTML = bathLandscapeSvg(dateStr);
     document.getElementById('bath-empty').hidden = birds.length > 0;
     document.getElementById('bath-empty').textContent = isToday ? 'No birds at the bath yet today' : 'No birds heard this day';
@@ -472,12 +484,78 @@ function updateBathFrame() {
     }
 }
 
+// ---- Weather (Open-Meteo via /api/weather; hourly for the viewed day) ----
+
+const CLOUD_COUNT = 6;
+
+function loadBathWeather(dateStr, isToday) {
+    const fresh = Date.now() - bath.weatherFetched < 15 * 60 * 1000;
+    if (bath.weatherDate === dateStr && (!isToday || fresh)) return;
+    bath.weatherDate = dateStr;
+    bath.weatherFetched = Date.now();
+    if (bath.weather && bath.weather.date !== dateStr) bath.weather = null;
+    fetch(`/api/weather/${dateStr}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            if (!data || data.date !== bath.date) return;
+            bath.weather = data.hours && data.hours.length ? data : null;
+            updateBathFrame();
+        })
+        .catch(() => {});
+}
+
+// What the sky is doing at ts: { cloud 0-1, precip 'rain'|'snow'|'', strength 0-1, fog 0-1, storm, temp }
+function bathConditions(ts) {
+    const hour = bath.weather && bath.weather.hours[Math.min(Math.floor(bathHour(ts)), 23)];
+    if (!hour || hour.code === null) return { cloud: 0, precip: '', strength: 0, fog: 0, storm: false, temp: null };
+    const c = hour.code;
+    const w = { cloud: (hour.cloud || 0) / 100, precip: '', strength: 0, fog: 0, storm: c >= 95, temp: hour.temp };
+    if (c === 45 || c === 48) w.fog = 0.55;
+    if ((c >= 71 && c <= 77) || c === 85 || c === 86) {
+        w.precip = 'snow';
+        w.strength = c === 75 || c === 86 ? 1 : c === 73 ? 0.75 : 0.5;
+    } else if ((c >= 51 && c <= 67) || (c >= 80 && c <= 82) || c >= 95) {
+        w.precip = 'rain';
+        w.strength = [55, 63, 65, 67, 81, 82].includes(c) || c >= 95 ? 0.9 : c >= 61 ? 0.65 : 0.4;
+    }
+    if (w.precip) w.cloud = Math.max(w.cloud, 0.9);
+    return w;
+}
+
+function applyBathWeather(w, night) {
+    const scene = document.getElementById('bath-scene');
+    const visible = Math.round(w.cloud * CLOUD_COUNT);
+    const grey = Math.min(Math.max((w.cloud - 0.6) / 0.4, 0), 1);
+    document.querySelectorAll('#bath-clouds i').forEach((cloud, i) => {
+        cloud.style.opacity = i < visible ? 1 : 0;
+    });
+    scene.style.setProperty('--cloud-color', mixHex('#ffffff', '#aeb4bc', grey * (w.precip ? 1 : 0.7)));
+    scene.style.setProperty('--precip-strength', w.strength.toFixed(2));
+    scene.style.setProperty('--fog', (w.fog * (1 - night * 0.6)).toFixed(2));
+    scene.dataset.precip = w.precip;
+    scene.classList.toggle('storm', w.storm);
+    document.getElementById('bath-sun').style.visibility = w.cloud > 0.85 ? 'hidden' : '';
+    document.getElementById('bath-moon').style.visibility = w.cloud > 0.85 ? 'hidden' : '';
+    document.getElementById('bath-stars').style.visibility = w.cloud > 0.6 ? 'hidden' : '';
+    document.getElementById('bath-clock-temp').textContent = w.temp !== null && bath.birds.length ? ` · ${w.temp}°` : '';
+}
+
 function setBathSky(ts) {
     const L = bath.layout;
     const scene = document.getElementById('bath-scene');
     const alt = sunAltitude(ts);
-    const [top, bottom] = skyColors(alt);
+    let [top, bottom] = skyColors(alt);
     const night = Math.min(Math.max((2 - alt) / 10, 0), 1);
+
+    // An overcast sky goes grey (dark grey at night)
+    const w = bathConditions(ts);
+    const overcast = Math.min(Math.max((w.cloud - 0.5) / 0.5, 0), 1) * 0.75;
+    if (overcast > 0) {
+        const grey = mixHex('#a3abb5', '#1c2029', night);
+        top = mixHex(top, grey, overcast);
+        bottom = mixHex(bottom, grey, overcast);
+    }
+    applyBathWeather(w, night);
 
     scene.style.setProperty('--sky-top', top);
     scene.style.setProperty('--sky-bottom', bottom);
@@ -566,6 +644,9 @@ function updateBathInfo(refreshOnly) {
 
     document.getElementById('bath-name').textContent = item.species_common;
     document.getElementById('bath-first-ever').hidden = !item.is_first_ever;
+    const returned = document.getElementById('bath-returned');
+    returned.hidden = !item.returned_after_days;
+    returned.textContent = item.returned_after_days ? formatReturn(item.returned_after_days) : '';
     const backyard = formatBackyardLine(item);
     document.getElementById('bath-backyard').textContent = backyard ? `🏡 ${backyard}` : '';
     document.getElementById('bath-credit').innerHTML = item.photo_failed ? '' : renderPhotoCredit(item.photo_credit);
@@ -619,6 +700,9 @@ function setupBirdbath() {
     if (!scene) return;
     const stars = document.getElementById('bath-stars');
     stars.innerHTML = STARS.map(([x, y]) => `<i style="left:${x}%;top:${y}%"></i>`).join('');
+    // Clouds drift across at different heights, sizes and speeds
+    document.getElementById('bath-clouds').innerHTML = Array.from({ length: CLOUD_COUNT }, (_, i) =>
+        `<i style="top:${4 + (i * 37) % 30}%;--s:${(0.7 + (i * 0.29) % 0.6).toFixed(2)};animation-duration:${70 + i * 17}s;animation-delay:${-i * 23}s"></i>`).join('');
 
     document.getElementById('bath-track').addEventListener('scroll', scheduleBathFrame, { passive: true });
     document.getElementById('bath-prev').addEventListener('click', () => scrollBathTo(Math.max(bath.current - 1, 0), true));

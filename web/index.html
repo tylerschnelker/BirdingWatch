@@ -8,19 +8,19 @@
     <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="BirdWatch">
-    <title>BirdWatch - Your Backyard Bird Tracker</title>
-    <link rel="stylesheet" href="/static/style.css?v=5">
+    <meta name="apple-mobile-web-app-title" content="Mary's Birds">
+    <title>Mary's Backyard Birds</title>
+    <link rel="stylesheet" href="/static/style.css?v=6">
     <link rel="icon" href="/static/icons/icon-192.png" type="image/png">
     <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-    <script src="/static/app.js?v=5"></script>
-    <script src="/static/birds.js?v=5"></script>
-    <script src="/static/birdbath.js?v=5"></script>
+    <script src="/static/app.js?v=6"></script>
+    <script src="/static/birds.js?v=6"></script>
+    <script src="/static/birdbath.js?v=6"></script>
 </head>
 <body>
     <header class="app-header">
         <div class="header-titles">
-            <h1>BirdWatch</h1>
+            <h1>Mary's Backyard Birds</h1>
             <div id="recorder-status" class="live-indicator status-unknown" title="Backyard recorder status">
                 <span class="live-dot"></span>
                 <span id="recorder-status-text" class="live-text">Checking recorder…</span>
@@ -57,11 +57,16 @@
                             <div id="bath-stars" class="bath-stars"></div>
                             <div id="bath-moon" class="bath-moon"></div>
                             <div id="bath-sun" class="bath-sun"></div>
+                            <div id="bath-clouds" class="bath-clouds"></div>
                         </div>
                         <div id="bath-landscape" class="bath-landscape"></div>
                         <div class="bath-night"></div>
+                        <div class="bath-weather">
+                            <div class="bath-fog"></div>
+                            <div class="bath-precip"></div>
+                        </div>
                         <div id="bath-track" class="bath-track"></div>
-                        <div class="bath-clock"><span id="bath-clock-time"></span></div>
+                        <div class="bath-clock"><span id="bath-clock-time"></span><span id="bath-clock-temp"></span></div>
                         <button id="bath-prev" class="bath-arrow bath-arrow-prev" aria-label="Earlier bird"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
                         <button id="bath-next" class="bath-arrow bath-arrow-next" aria-label="Later bird"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
                         <div id="bath-empty" class="bath-empty" hidden></div>
@@ -73,6 +78,7 @@
                 </div>
                 <div id="bath-info" class="bath-info">
                     <div id="bath-first-ever" class="bath-first-ever" hidden>🎉 First time ever!</div>
+                    <div id="bath-returned" class="bath-returned" hidden></div>
                     <div class="bath-info-top">
                         <div class="bath-info-text">
                             <div id="bath-name" class="bath-name"></div>

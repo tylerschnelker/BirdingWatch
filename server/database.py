@@ -5,6 +5,7 @@ Uses Python's built-in sqlite3 module (no ORM).
 
 import sqlite3
 from datetime import datetime
+import bisect
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -220,16 +221,109 @@ def get_species_summary() -> List[Dict]:
                 )
             ) as max_duration_minutes,
             MAX(last_detected_at) as last_seen,
+            MAX(last_detected_timestamp) as last_seen_timestamp,
+            COUNT(DISTINCT date(last_detected_timestamp, 'unixepoch', 'localtime')) as days_heard,
             MAX(image_url) as image_url
         FROM detections
         GROUP BY species_common
         ORDER BY total_sessions DESC
     """)
     
-    rows = cursor.fetchall()
+    rows = [dict(row) for row in cursor.fetchall()]
+
+    # Each species' best recording ever: its highest-confidence kept daily clip
+    cursor.execute("""
+        SELECT species_common, audio_filename, detection_date, MAX(confidence)
+        FROM daily_best_clips
+        GROUP BY species_common
+    """)
+    best = {r[0]: (r[1], r[2]) for r in cursor.fetchall()}
     conn.close()
-    
-    return [dict(row) for row in rows]
+
+    for row in rows:
+        row['best_audio_filename'], row['best_audio_date'] = best.get(row['species_common'], (None, None))
+    return rows
+
+
+# A species counts as "back" when it returns after RETURN_GAP_DAYS or more
+# without being heard, and had been heard on RETURN_MIN_DAYS days before that
+# (so a one-off misidentification doesn't come "back").
+RETURN_GAP_DAYS = 30
+RETURN_MIN_DAYS = 3
+
+
+def is_return(gap_days: int, days_heard_before: int, recorder_days: int) -> bool:
+    """
+    recorder_days: days in the gap when anything at all was heard. Requiring
+    half of them keeps a recorder outage from bringing every regular "back".
+    """
+    return (gap_days >= RETURN_GAP_DAYS and days_heard_before >= RETURN_MIN_DAYS
+            and recorder_days >= (gap_days - 1) / 2)
+
+
+def count_heard_days_between(after_ts: int, before_ts: int, conn=None) -> int:
+    """Distinct local days, strictly after after_ts's day and before before_ts's day, with any detection."""
+    own = conn is None
+    conn = conn or get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT COUNT(DISTINCT date(last_detected_timestamp, 'unixepoch', 'localtime'))
+        FROM detections
+        WHERE date(last_detected_timestamp, 'unixepoch', 'localtime') > date(?, 'unixepoch', 'localtime')
+          AND date(last_detected_timestamp, 'unixepoch', 'localtime') < date(?, 'unixepoch', 'localtime')
+    """, (after_ts, before_ts))
+    count = cursor.fetchone()[0]
+    if own:
+        conn.close()
+    return count
+
+
+def get_last_heard_before(species_common: str, before_ts: int):
+    """(last heard timestamp or None, distinct local days heard) before before_ts."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT MAX(last_detected_timestamp),
+               COUNT(DISTINCT date(last_detected_timestamp, 'unixepoch', 'localtime'))
+        FROM detections WHERE species_common = ? AND last_detected_timestamp < ?
+    """, (species_common, before_ts))
+    last_ts, days = cursor.fetchone()
+    conn.close()
+    return last_ts, days or 0
+
+
+def get_species_returns() -> Dict[str, Dict]:
+    """
+    Each species' most recent return after a long absence, from the local days
+    it was heard: {species: {'date': 'YYYY-MM-DD', 'gap_days': n}}.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT DISTINCT species_common, date(last_detected_timestamp, 'unixepoch', 'localtime') as day
+        FROM detections
+        ORDER BY species_common, day
+    """)
+    days_by_species: Dict[str, List[str]] = {}
+    all_days = set()
+    for species, day in cursor.fetchall():
+        days_by_species.setdefault(species, []).append(day)
+        all_days.add(day)
+    conn.close()
+    all_days = sorted(all_days)
+
+    returns = {}
+    for species, days in days_by_species.items():
+        dates = [datetime.strptime(d, '%Y-%m-%d').date() for d in days]
+        for i in range(len(dates) - 1, 0, -1):
+            gap = (dates[i] - dates[i - 1]).days
+            if gap < RETURN_GAP_DAYS:
+                continue
+            between = bisect.bisect_left(all_days, days[i]) - bisect.bisect_right(all_days, days[i - 1])
+            if is_return(gap, i, between):
+                returns[species] = {'date': days[i], 'gap_days': gap}
+                break
+    return returns
 
 
 def get_detection_by_id(detection_id: int) -> Optional[Dict]:
@@ -595,12 +689,17 @@ def get_day_species_summary(detection_date: str, start_ts: int, end_ts: int) -> 
             (SELECT MIN(d3.first_detected_timestamp) FROM detections d3 WHERE d3.species_common = d.species_common) as earliest_ever_timestamp,
             (SELECT COUNT(DISTINCT date(d4.last_detected_timestamp, 'unixepoch', 'localtime'))
                 FROM detections d4
-                WHERE d4.species_common = d.species_common AND d4.last_detected_timestamp < ?) as days_heard
+                WHERE d4.species_common = d.species_common AND d4.last_detected_timestamp < ?) as days_heard,
+            (SELECT MAX(d5.last_detected_timestamp) FROM detections d5
+                WHERE d5.species_common = d.species_common AND d5.last_detected_timestamp < ?) as prev_heard_timestamp,
+            (SELECT COUNT(DISTINCT date(d6.last_detected_timestamp, 'unixepoch', 'localtime'))
+                FROM detections d6
+                WHERE d6.species_common = d.species_common AND d6.last_detected_timestamp < ?) as days_heard_before
         FROM detections d
         WHERE d.last_detected_timestamp >= ? AND d.last_detected_timestamp < ?
         GROUP BY d.species_common
         ORDER BY all_time_sessions ASC, last_seen_timestamp DESC
-    """, (end_ts, start_ts, end_ts))
+    """, (end_ts, start_ts, start_ts, start_ts, end_ts))
 
     rows = [dict(row) for row in cursor.fetchall()]
 
@@ -608,6 +707,11 @@ def get_day_species_summary(detection_date: str, start_ts: int, end_ts: int) -> 
         earliest = row.pop('earliest_ever_timestamp')
         row['is_first_ever'] = earliest is not None and start_ts <= earliest < end_ts
         row['first_heard_timestamp'] = earliest
+        prev = row.pop('prev_heard_timestamp')
+        before = row.pop('days_heard_before')
+        gap = (start_ts - prev) // 86400 + 1 if prev else 0
+        returned = gap >= RETURN_GAP_DAYS and is_return(gap, before, count_heard_days_between(prev, start_ts, conn))
+        row['returned_after_days'] = gap if returned else None
 
     cursor.execute("""
         SELECT species_common, audio_filename FROM daily_best_clips WHERE detection_date = ?

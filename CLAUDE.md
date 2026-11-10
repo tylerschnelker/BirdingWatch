@@ -320,6 +320,29 @@ an iOS switch for push, which on iPhone/iPad without Home Screen install explain
 instead of hiding. The user didn't want a notifications button always on screen. `openSheet()` in app.js
 is the shared sheet for Settings and the bird card.
 
+## Weather, song library, comings and goings (2026-11-10)
+
+- **Weather in the scene**: `server/weather.py` fetches hourly Open-Meteo data (code, cloud %, °F,
+  precip, snow) for a local day via `GET /api/weather/{date}`; forecast API for the last ~80 days,
+  archive API before that. Only `LAT`/`LON` rounded to 0.1° (~10 km) go upstream; the browser gets
+  conditions only. Past days cache in memory for the process's life, today for 15 min; failures
+  return `[]` (clear sky). `birdbath.js` (`bathConditions`/`applyBathWeather`) shows the hour under
+  the scroll position: drifting clouds, grey overcast sky, rain/snow layers, fog, storm flashes,
+  and the temperature in the clock pill. Animations stop under prefers-reduced-motion.
+- **Song library**: `/api/species` returns `best_audio_filename`/`best_audio_date` (each species'
+  highest-confidence `daily_best_clips` row); All species rows have a ▶ for it. Clips were never
+  being lost: one per species per day is kept (see "Audio retention").
+- **Returns** (`database.py`): a species is "back" after `RETURN_GAP_DAYS` (30) without being heard,
+  if it was heard on `RETURN_MIN_DAYS` (3) days before, and the recorder heard *something* on at least
+  half the gap's days (so an outage doesn't bring every regular "back"). The day feed has
+  `returned_after_days` (badge on the birdbath and List cards); `/api/species` has `returned_on`/
+  `returned_after_days`, which feed All species' "Back for the season" (returned in the last 30 days and
+  heard in the last 14) and "Gone quiet" (heard on 10+ days, silent 14-120 days) cards. The upload
+  handler pushes "Back for the season" on the first session after such a gap. The 21-day gap first tried
+  flagged magpies and flickers after a summer lull; 30 keeps the real seasonal arrivals.
+- **Name**: the header and title are "Mary's Backyard Birds" (the domain); the Home Screen label is
+  "Mary's Birds".
+
 ## Config / environment
 
 - `.env.example` documents all keys. `LAT`/`LON` are set to real Colorado coordinates.

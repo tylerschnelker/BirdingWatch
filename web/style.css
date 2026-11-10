@@ -95,7 +95,8 @@ svg {
 }
 
 h1 {
-    font-size: 34px;
+    /* Large title, shrunk just enough that the name fits one line on a phone */
+    font-size: clamp(22px, 6.8vw, 34px);
     font-weight: 700;
     letter-spacing: 0.01em;
     line-height: 1.15;
@@ -368,6 +369,8 @@ main {
     box-shadow: 0 0 0 2px var(--orange), var(--shadow);
 }
 
+.returned-banner,
+.bath-returned,
 .first-ever-banner,
 .bath-first-ever {
     display: inline-block;
@@ -378,6 +381,12 @@ main {
     color: var(--gold-text);
     font-size: 13px;
     font-weight: 600;
+}
+
+.returned-banner,
+.bath-returned {
+    background: var(--accent-tint);
+    color: var(--accent);
 }
 
 .card-meta {
@@ -633,6 +642,94 @@ main {
     color: var(--label-2);
 }
 
+/* ▶ for each species' best recording ever */
+.species-play {
+    flex: 0 0 auto;
+    position: relative;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: var(--accent-tint);
+    cursor: pointer;
+}
+
+.species-play::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    margin: -6px 0 0 -3px;
+    border-style: solid;
+    border-width: 6px 0 6px 10px;
+    border-color: transparent transparent transparent var(--accent);
+}
+
+.species-play.playing::before {
+    width: 4px;
+    height: 12px;
+    margin: -6px 0 0 -5px;
+    border: none;
+    background: var(--accent);
+    box-shadow: 6px 0 0 var(--accent);
+}
+
+/* Comings and goings, above the full species list */
+.moves {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.moves-card {
+    padding: 14px 16px 6px;
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.moves-title,
+.list-heading {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.list-heading {
+    grid-column: 1 / -1;
+    margin: 8px 4px 0;
+}
+
+.moves-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+}
+
+.moves-row + .moves-row {
+    border-top: 0.5px solid var(--separator);
+}
+
+.moves-row .species-thumbnail {
+    width: 40px !important;
+    height: 40px !important;
+    border-radius: 50%;
+}
+
+.moves-name {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+.moves-sub {
+    font-size: 13px;
+    color: var(--label-2);
+}
+
 /* ------------------------------------------------------------------------
    Birdbath (home tab): see birdbath.js. The scene's sky, water and night
    tint come from CSS variables that the script sets as you swipe. The
@@ -740,6 +837,134 @@ main {
     opacity: calc(var(--night) * 0.5);
     mix-blend-mode: multiply;
     pointer-events: none;
+}
+
+/* Weather: clouds drift in the sky; rain, snow and fog sit over the yard but
+   under the birds. birdbath.js sets the variables and data-precip. */
+.bath-clouds {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+}
+
+.bath-clouds i {
+    --s: 1;
+    position: absolute;
+    left: 0;
+    width: calc(150px * var(--s));
+    height: calc(42px * var(--s));
+    border-radius: 999px;
+    background: var(--cloud-color, #fff);
+    opacity: 0;
+    transition: opacity 1.2s ease, background-color 1.2s ease;
+    animation: cloud-drift linear infinite;
+}
+
+.bath-clouds i::before,
+.bath-clouds i::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    background: inherit;
+}
+
+.bath-clouds i::before {
+    left: 18%;
+    bottom: 35%;
+    width: 42%;
+    height: 130%;
+}
+
+.bath-clouds i::after {
+    left: 48%;
+    bottom: 30%;
+    width: 34%;
+    height: 100%;
+}
+
+@keyframes cloud-drift {
+    from { transform: translateX(-180px); }
+    to { transform: translateX(calc(100cqw + 40px)); }
+}
+
+.bath-sky {
+    container-type: inline-size;
+}
+
+.bath-weather {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.bath-fog {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(228, 232, 238, var(--fog, 0)) 10%, rgba(228, 232, 238, calc(var(--fog, 0) * 0.7)) 55%, rgba(228, 232, 238, 0) 95%);
+    transition: background 1s ease;
+}
+
+.bath-precip {
+    position: absolute;
+    inset: -40px;
+    opacity: 0;
+    transition: opacity 1s ease;
+}
+
+.bath-scene[data-precip=rain] .bath-precip {
+    opacity: var(--precip-strength);
+    transform: skewX(-8deg);
+    background-image:
+        radial-gradient(0.8px 7px at 50% 50%, rgba(235, 242, 250, 0.75) 99%, transparent),
+        radial-gradient(0.7px 6px at 30% 20%, rgba(235, 242, 250, 0.6) 99%, transparent),
+        radial-gradient(0.6px 5px at 70% 80%, rgba(235, 242, 250, 0.5) 99%, transparent);
+    background-size: 37px 41px, 53px 47px, 29px 59px;
+    animation: rain-fall 0.9s linear infinite;
+}
+
+@keyframes rain-fall {
+    to { background-position: 0 410px, 0 470px, 0 590px; }
+}
+
+.bath-scene[data-precip=snow] .bath-precip {
+    opacity: var(--precip-strength);
+    background-image:
+        radial-gradient(circle at 50% 50%, #fff 1.6px, transparent 2.4px),
+        radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.9) 1.2px, transparent 2px),
+        radial-gradient(circle at 70% 70%, rgba(255, 255, 255, 0.8) 2.2px, transparent 3px);
+    background-size: 60px 60px, 45px 52px, 110px 96px;
+    animation: snow-fall 12s linear infinite;
+}
+
+@keyframes snow-fall {
+    to { background-position: 120px 600px, -90px 520px, 110px 960px; }
+}
+
+/* A flash now and then in a thunderstorm */
+.bath-weather::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+}
+
+.bath-scene.storm .bath-weather::after {
+    animation: lightning 9s infinite;
+}
+
+@keyframes lightning {
+    0%, 90%, 92.5%, 100% { opacity: 0; }
+    91% { opacity: 0.45; }
+    93% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bath-clouds i,
+    .bath-precip,
+    .bath-scene.storm .bath-weather::after {
+        animation: none !important;
+    }
 }
 
 /* The swipeable row of birds sits over the whole scene, so a swipe anywhere works */
@@ -883,7 +1108,7 @@ main {
     pointer-events: none;
 }
 
-.bath-clock:has(span:empty) {
+.bath-clock:has(#bath-clock-time:empty) {
     display: none;
 }
 

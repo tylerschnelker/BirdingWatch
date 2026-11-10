@@ -1,6 +1,6 @@
 {
     "name": "Mary's Backyard Birds",
-    "short_name": "BirdWatch",
+    "short_name": "Mary's Birds",
     "description": "Your backyard bird tracker",
     "start_url": "/",
     "display": "standalone",

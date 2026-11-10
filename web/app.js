@@ -95,6 +95,12 @@ function formatBackyardLine(item) {
     return `First heard here ${firstStr} · heard on ${days} day${days !== 1 ? 's' : ''}`;
 }
 
+// "Back after 5 weeks" / "Back after 4 months" for a species returning after a long absence
+function formatReturn(days) {
+    if (days >= 60) return `Back after ${Math.round(days / 30)} months`;
+    return `Back after ${Math.round(days / 7)} weeks`;
+}
+
 // Today's description: a rotating Wikipedia section, or the stored intro as a fallback
 function renderFact(item) {
     if (item.fact) {
@@ -167,6 +173,7 @@ function renderSpeciesDayCard(item, dateStr) {
 
     card.innerHTML = `
         ${item.is_first_ever ? `<div class="first-ever-banner">🎉 First time ever!</div>` : ''}
+        ${item.returned_after_days ? `<div class="returned-banner">${formatReturn(item.returned_after_days)}</div>` : ''}
         <div class="card-header">
             ${createBirdImage(item.image_url, 'large').outerHTML}
             <div class="bird-info">
@@ -357,7 +364,7 @@ function renderSpeciesItem(species) {
     item.innerHTML = `
         ${createBirdImage(species.image_url, 'small').outerHTML}
         <div class="species-details">
-            <div class="species-name">${species.species_common}</div>
+            <div class="species-name">${escapeHtml(species.species_common)}</div>
             <div class="species-stats">
                 <div class="stat-item">
                     <span>🔢</span>
@@ -378,9 +385,71 @@ function renderSpeciesItem(species) {
                 </div>
             </div>
         </div>
+        ${species.best_audio_filename ? '<button class="species-play" aria-label="Play its best recording"></button>' : ''}
     `;
-    
+
+    const play = item.querySelector('.species-play');
+    if (play) play.addEventListener('click', () => toggleClip(play, species.best_audio_filename));
+
     return item;
+}
+
+// The All species tab's ▶ buttons: one clip at a time
+let listClip = null;
+
+function stopListClip() {
+    if (!listClip) return;
+    listClip.audio.pause();
+    listClip.button.classList.remove('playing');
+    listClip = null;
+}
+
+function toggleClip(button, filename) {
+    const wasThis = listClip && listClip.button === button;
+    stopListClip();
+    if (wasThis) return;
+    if (typeof stopBathAudio === 'function') stopBathAudio();
+    const audio = new Audio(`/api/audio/${encodeURIComponent(filename)}`);
+    listClip = { audio, button };
+    audio.addEventListener('ended', stopListClip);
+    audio.addEventListener('error', stopListClip);
+    audio.play().then(() => button.classList.add('playing')).catch(stopListClip);
+}
+
+const DAY_SECONDS = 86400;
+
+// "Back for the season" and "Gone quiet" above the full list
+function renderComingsAndGoings(species) {
+    const now = Date.now() / 1000;
+    const today = serverTodayDate ? new Date(`${serverTodayDate}T12:00:00`) : new Date();
+    const back = species
+        .filter(s => s.returned_on && (today - new Date(`${s.returned_on}T12:00:00`)) / 1000 / DAY_SECONDS <= 30
+            && now - s.last_seen_timestamp <= 14 * DAY_SECONDS)
+        .sort((a, b) => b.returned_on.localeCompare(a.returned_on));
+    const quiet = species
+        .filter(s => s.days_heard >= 10 && now - s.last_seen_timestamp > 14 * DAY_SECONDS && now - s.last_seen_timestamp < 120 * DAY_SECONDS)
+        .sort((a, b) => b.last_seen_timestamp - a.last_seen_timestamp);
+    if (!back.length && !quiet.length) return null;
+
+    const shortDate = ts => new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const row = (s, sub) => `
+        <div class="moves-row">
+            ${createBirdImage(s.image_url, 'small').outerHTML}
+            <div><div class="moves-name">${escapeHtml(s.species_common)}</div><div class="moves-sub">${escapeHtml(sub)}</div></div>
+        </div>`;
+    const section = document.createElement('div');
+    section.className = 'moves';
+    section.innerHTML = `
+        ${back.length ? `<div class="moves-card">
+            <div class="moves-title">Back for the season</div>
+            ${back.map(s => row(s, `${formatReturn(s.returned_after_days)} · ${shortDate(new Date(`${s.returned_on}T12:00:00`) / 1000)}`)).join('')}
+        </div>` : ''}
+        ${quiet.length ? `<div class="moves-card">
+            <div class="moves-title">Gone quiet</div>
+            ${quiet.map(s => row(s, `Not heard since ${shortDate(s.last_seen_timestamp)} · heard on ${s.days_heard} days`)).join('')}
+        </div>` : ''}
+    `;
+    return section;
 }
 
 // Server-anchored date state for day navigation
@@ -498,6 +567,13 @@ async function loadSpecies() {
             return;
         }
         
+        const moves = renderComingsAndGoings(species);
+        if (moves) container.appendChild(moves);
+        const heading = document.createElement('div');
+        heading.className = 'list-heading';
+        heading.textContent = `All species · ${species.length}`;
+        container.appendChild(heading);
+
         species.forEach(speciesItem => {
             container.appendChild(renderSpeciesItem(speciesItem));
         });
@@ -533,6 +609,7 @@ function setupTabs() {
             // The day arrows drive the birdbath and the list, not the all-species tab
             document.getElementById('date-nav').hidden = tabId === 'species';
             if (tabId !== 'birdbath') stopBathAudio();
+            if (tabId !== 'species') stopListClip();
         });
     });
 }
@@ -632,7 +709,7 @@ async function setNotifications(on) {
     }
 }
 
-const NOTIFY_ABOUT = 'Get a notification when a bird visits the backyard for the first time ever, or if the recorder goes offline.';
+const NOTIFY_ABOUT = 'Get a notification when a bird visits the backyard for the first time ever, when a regular comes back after weeks away, or if the recorder goes offline.';
 
 // Settings sheet (the gear in the header): notifications and recorder status
 async function openSettings() {
@@ -759,7 +836,7 @@ async function init() {
             if (currentViewedDate === serverTodayDate) {
                 loadDayView();
             }
-        } else {
+        } else if (!listClip) {
             loadSpecies();
         }
     }, 30000);

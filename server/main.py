@@ -25,11 +25,13 @@ from database import (
     get_recent_detections, get_species_summary, get_detection_by_id, delete_detection,
     get_daily_best, insert_daily_best, update_daily_best, count_daily_best_references,
     get_daily_best_by_filename, delete_daily_best, get_day_species_summary, get_day_species_visits,
-    count_all_sessions_for_species, add_push_subscription, remove_push_subscription
+    count_all_sessions_for_species, add_push_subscription, remove_push_subscription,
+    get_species_returns, get_last_heard_before, is_return, count_heard_days_between, RETURN_GAP_DAYS
 )
 from analyzer import analyze_audio, fetch_bird_info
 from notifications import send_first_ever_notification, send_push
 from species_media import start_background_refresh, request_refresh, apply_daily_media
+from weather import get_day_weather
 
 # Initialize FastAPI app
 app = FastAPI(title="BirdWatch", description="Backyard bird tracking system")
@@ -211,6 +213,11 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
                 session_id = active_session['id']
                 print(f"Updated session for {species} (count: {active_session['detection_count'] + detection_count}, added {detection_count} calls)")
             else:
+                # A regular coming back after weeks away (before this session is stored)
+                last_heard_ts, days_heard_before = get_last_heard_before(species, now_ts)
+                gap_days = (now_ts - last_heard_ts) // 86400 if last_heard_ts else 0
+                recorder_days = count_heard_days_between(last_heard_ts, now_ts) if gap_days >= RETURN_GAP_DAYS else 0
+
                 # Create new session
                 bird_info = fetch_bird_info(species, scientific_name)
 
@@ -232,6 +239,9 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
                 if count_all_sessions_for_species(species) == 1:
                     send_first_ever_notification(species, scientific_name)
                     request_refresh(species, scientific_name)
+                elif is_return(gap_days, days_heard_before, recorder_days):
+                    weeks = round(gap_days / 7)
+                    send_push("Back for the season", f"{species} is back after {weeks} weeks away.")
 
             total_sessions_updated += 1
 
@@ -324,6 +334,11 @@ async def get_species():
     """
     species = get_species_summary()
     apply_daily_media(species, datetime.now().strftime('%Y-%m-%d'))
+    returns = get_species_returns()
+    for item in species:
+        back = returns.get(item['species_common'])
+        item['returned_on'] = back['date'] if back else None
+        item['returned_after_days'] = back['gap_days'] if back else None
     return JSONResponse(species)
 
 
@@ -430,6 +445,17 @@ async def get_day_summary(date: str):
     species = get_day_species_summary(date, start_ts, end_ts)
     apply_daily_media(species, date)
     return JSONResponse({"date": date, "species": species})
+
+
+@app.get("/api/weather/{date}")
+def get_weather(date: str):
+    """
+    Hourly weather for one local day, for the birdbath scene (sync, so FastAPI
+    runs the upstream fetch in its threadpool).
+    """
+    if _parse_local_day(date) is None:
+        return JSONResponse({"status": "error", "message": "Invalid date format, expected YYYY-MM-DD"}, status_code=400)
+    return JSONResponse({"date": date, "hours": get_day_weather(date)})
 
 
 @app.get("/api/days/{date}/species/{species_common}")
