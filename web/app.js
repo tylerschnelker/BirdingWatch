@@ -195,7 +195,10 @@ function renderSpeciesDayCard(item, dateStr) {
                 ? `<audio controls src="/api/audio/${item.audio_filename}" onerror="this.replaceWith(Object.assign(document.createElement('span'), {className: 'audio-unavailable-note', textContent: 'Audio no longer available'}))"></audio>`
                 : `<span class="audio-unavailable-note">Audio no longer available</span>`}
         </div>
-        <button class="expand-button visits-toggle">Show ${item.visit_count} visit${item.visit_count !== 1 ? 's' : ''}</button>
+        <div class="card-actions">
+            <button class="expand-button visits-toggle">Show ${item.visit_count} visit${item.visit_count !== 1 ? 's' : ''}</button>
+            ${isOwner() ? '<button class="wrong-bird">Wrong bird?</button>' : ''}
+        </div>
         <div class="visits-list collapsed"></div>
     `;
 
@@ -203,6 +206,8 @@ function renderSpeciesDayCard(item, dateStr) {
     // safe to interpolate into onclick="..."/id="..." strings (e.g. "Cooper's
     // Hawk"), so wire these up directly instead.
     card.querySelector('.visits-toggle').addEventListener('click', () => toggleVisits(item.species_common, dateStr, card));
+    const wrong = card.querySelector('.wrong-bird');
+    if (wrong) wrong.addEventListener('click', () => hideDaySpecies(item, dateStr));
 
     const photo = card.querySelector('.bird-photo img');
     if (photo) {
@@ -280,7 +285,7 @@ function renderVisitRow(visit) {
             ${visit.audio_available
                 ? `<audio controls src="/api/audio/${visit.audio_filename}" onerror="this.replaceWith(Object.assign(document.createElement('span'), {className: 'audio-unavailable-note', textContent: 'Audio no longer available'}))"></audio>`
                 : `<span class="audio-unavailable-note">Audio no longer available</span>`}
-            <button class="delete-button" onclick="deleteDetection(${visit.id})" title="Delete visit">🗑️</button>
+            ${isOwner() ? `<button class="hide-button" onclick="hideVisit(${Number(visit.id)}, this)">Hide</button>` : ''}
         </div>
     `;
 
@@ -320,33 +325,99 @@ async function toggleVisits(speciesCommon, dateStr, cardEl) {
     toggleBtn.textContent = 'Hide visits';
 }
 
-// Delete a single visit (session)
-async function deleteDetection(detectionId) {
-    if (!confirm('Are you sure you want to delete this visit?')) {
+// ---- Owner editing: hide misidentified visits (reversible) ----
+// The key lives only in this browser (localStorage). A device is unlocked by
+// opening the site once with #owner=<key>; the fragment never reaches the server.
+
+const OWNER_KEY_STORAGE = 'bw-owner-key';
+
+function isOwner() {
+    return !!localStorage.getItem(OWNER_KEY_STORAGE);
+}
+
+function ownerFetch(url, options = {}) {
+    return fetch(url, { ...options, headers: { ...(options.headers || {}), 'X-Admin-Key': localStorage.getItem(OWNER_KEY_STORAGE) || '' } });
+}
+
+async function unlockFromLink() {
+    const match = location.hash.match(/owner=([^&]+)/);
+    if (!match) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    const key = decodeURIComponent(match[1]);
+    const response = await fetch('/api/owner/check', { headers: { 'X-Admin-Key': key } });
+    if (response.ok) {
+        localStorage.setItem(OWNER_KEY_STORAGE, key);
+        alert('Editing is unlocked on this device. Hide wrong birds from a bird\'s card; restore them in Settings.');
+    } else {
+        alert('That unlock link is not valid.');
+    }
+}
+
+// After hiding or restoring, redraw everything that counts visits
+function refreshAfterEdit() {
+    loadDayView();
+    loadSpecies();
+}
+
+async function hideVisit(detectionId, button) {
+    button.disabled = true;
+    const response = await ownerFetch(`/api/detections/${detectionId}/hide`, { method: 'POST' });
+    if (!response.ok) {
+        button.disabled = false;
+        alert(response.status === 403 ? 'This device is no longer unlocked.' : 'Could not hide that visit.');
         return;
     }
+    button.closest('.visit-row').remove();
+    refreshAfterEdit();
+}
 
-    try {
-        const response = await fetch(`/api/detections/${detectionId}`, {
-            method: 'DELETE'
-        });
-
-        if (response.ok) {
-            // Reload the whole day view so the parent card's counts/audio stay accurate
-            await loadDayView();
-
-            // Refresh the all-species tab too, if it's visible
-            const speciesTab = document.querySelector('.tab-button[data-tab="species"]');
-            if (speciesTab.classList.contains('active')) {
-                loadSpecies();
-            }
-        } else {
-            alert('Failed to delete detection');
-        }
-    } catch (error) {
-        console.error('Error deleting detection:', error);
-        alert('Error deleting detection');
+async function hideDaySpecies(item, dateStr) {
+    const visits = `${item.visit_count} visit${item.visit_count !== 1 ? 's' : ''}`;
+    if (!confirm(`Hide ${item.species_common} (${visits}) on this day as a wrong ID? You can restore it in Settings.`)) return;
+    const response = await ownerFetch(`/api/days/${dateStr}/species/${encodeURIComponent(item.species_common)}/hide`, { method: 'POST' });
+    if (!response.ok) {
+        alert(response.status === 403 ? 'This device is no longer unlocked.' : 'Could not hide that bird.');
+        return;
     }
+    document.querySelector('.sheet-backdrop .sheet-close')?.click();
+    refreshAfterEdit();
+}
+
+// Settings > Hidden visits: restore any of them
+async function openHiddenList() {
+    const content = document.createElement('div');
+    content.className = 'settings';
+    content.innerHTML = '<h2 class="sheet-title">Hidden visits</h2><div class="group hidden-list"><div class="row"><span class="row-value">Loading…</span></div></div><p class="group-footer">Hidden visits don\'t count anywhere. Restore one to bring it back.</p>';
+    openSheet(content, 'sheet-settings');
+    const list = content.querySelector('.hidden-list');
+    const response = await ownerFetch('/api/hidden');
+    if (!response.ok) {
+        list.innerHTML = '<div class="row"><span class="row-value">This device is no longer unlocked.</span></div>';
+        return;
+    }
+    const hidden = await response.json();
+    if (!hidden.length) {
+        list.innerHTML = '<div class="row"><span class="row-value">Nothing hidden</span></div>';
+        return;
+    }
+    list.innerHTML = hidden.map(h => `
+        <div class="row">
+            <span>
+                <span class="row-title">${escapeHtml(h.species_common)}</span>
+                <span class="row-sub">${new Date(h.last_detected_timestamp * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Denver' })} · ${h.detection_count} call${h.detection_count !== 1 ? 's' : ''} · ${Math.round(h.confidence * 100)}%</span>
+            </span>
+            <button class="restore-button" data-id="${Number(h.id)}">Restore</button>
+        </div>`).join('');
+    list.querySelectorAll('.restore-button').forEach(button => button.addEventListener('click', async () => {
+        button.disabled = true;
+        const r = await ownerFetch(`/api/hidden/${button.dataset.id}/restore`, { method: 'POST' });
+        if (r.ok) {
+            button.textContent = 'Restored';
+            refreshAfterEdit();
+        } else {
+            button.disabled = false;
+        }
+    }));
 }
 
 // Render species list item
@@ -733,9 +804,23 @@ async function openSettings() {
             </div>
         </div>
         <p class="group-footer">Birds are identified from their calls with BirdNET.</p>
+        ${isOwner() ? `
+        <div class="group-label">Editing</div>
+        <div class="group">
+            <button class="row row-button" id="hidden-visits-btn"><span class="row-title">Hidden visits</span><span class="row-value">›</span></button>
+            <button class="row row-button" id="lock-device-btn"><span class="row-title danger">Lock this device</span></button>
+        </div>
+        <p class="group-footer">This device can hide wrong IDs from a bird's card.</p>` : ''}
     `;
     content.querySelector('#settings-recorder').textContent = document.getElementById('recorder-status-text').textContent;
     openSheet(content, 'sheet-settings');
+
+    content.querySelector('#hidden-visits-btn')?.addEventListener('click', openHiddenList);
+    content.querySelector('#lock-device-btn')?.addEventListener('click', () => {
+        localStorage.removeItem(OWNER_KEY_STORAGE);
+        document.querySelector('.sheet-backdrop .sheet-close')?.click();
+        refreshAfterEdit();
+    });
 
     const toggle = content.querySelector('#notify-switch');
     const footer = content.querySelector('#notify-footer');
@@ -818,6 +903,7 @@ async function loadRecorderStatus() {
 
 // Initialize app
 async function init() {
+    await unlockFromLink();
     setupTabs();
     setupDateNav();
     setupBirdbath();

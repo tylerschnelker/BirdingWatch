@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
 from datetime import datetime, timedelta
 from fastapi import Header
+import hmac
 import uuid
 import os
 import re
@@ -18,7 +19,8 @@ import asyncio
 
 from config import (
     UPLOAD_DIR, DATABASE_PATH, HOST, PORT, API_KEY, SESSION_TIMEOUT_MINUTES,
-    SINGLETON_CONFIDENCE_THRESHOLD, VAPID_PUBLIC_KEY, RECORDER_OFFLINE_MINUTES
+    SINGLETON_CONFIDENCE_THRESHOLD, VAPID_PUBLIC_KEY, RECORDER_OFFLINE_MINUTES,
+    ADMIN_KEY, YARD_RULES
 )
 from database import (
     init_db, insert_session, find_active_session, update_session, update_session_with_count,
@@ -26,7 +28,8 @@ from database import (
     get_daily_best, insert_daily_best, update_daily_best, count_daily_best_references,
     get_daily_best_by_filename, delete_daily_best, get_day_species_summary, get_day_species_visits,
     count_all_sessions_for_species, add_push_subscription, remove_push_subscription,
-    get_species_returns, get_last_heard_before, is_return, count_heard_days_between, RETURN_GAP_DAYS
+    get_species_returns, get_last_heard_before, is_return, count_heard_days_between, RETURN_GAP_DAYS,
+    hide_detections, restore_detection, get_hidden_detections, get_day_species_ids
 )
 from analyzer import analyze_audio, fetch_bird_info
 from notifications import send_first_ever_notification, send_push
@@ -190,6 +193,16 @@ async def upload_audio(file: UploadFile = File(...), x_api_key: str = Header(Non
 
             # Check if there's an active session for this species
             active_session = find_active_session(species, SESSION_TIMEOUT_MINUTES, now_ts)
+
+            # This yard's rules (yard_rules.json): some species never count, some
+            # need several calls in one clip to start a visit.
+            rule = YARD_RULES.get(species, {})
+            if rule.get('block'):
+                print(f"Blocked by yard rules: {species} (confidence: {max_confidence:.2f})")
+                continue
+            if not active_session and detection_count < rule.get('min_calls', 1):
+                print(f"Held back by yard rules: {species} ({detection_count} call(s), needs {rule['min_calls']})")
+                continue
 
             # A species heard only once in this clip with no existing session to
             # corroborate it is more likely to be a misidentified noise (door
@@ -374,13 +387,63 @@ async def get_detection(detection_id: int):
     return JSONResponse(detection)
 
 
+def is_owner(key) -> bool:
+    """The X-Admin-Key header matches ADMIN_KEY (never true when it's unset)."""
+    return bool(ADMIN_KEY) and bool(key) and hmac.compare_digest(key.encode(), ADMIN_KEY.encode())
+
+
+def owner_only():
+    return JSONResponse({"status": "error", "message": "Owner key required"}, status_code=403)
+
+
+@app.get("/api/owner/check")
+async def owner_check(x_admin_key: str = Header(None)):
+    return JSONResponse({"owner": True}) if is_owner(x_admin_key) else owner_only()
+
+
+@app.post("/api/detections/{detection_id}/hide")
+async def hide_detection_endpoint(detection_id: int, x_admin_key: str = Header(None)):
+    """Hide one visit as a misidentification (reversible)."""
+    if not is_owner(x_admin_key):
+        return owner_only()
+    return JSONResponse({"hidden": hide_detections([detection_id], "wrong bird")})
+
+
+@app.post("/api/days/{date}/species/{species_common}/hide")
+async def hide_day_species_endpoint(date: str, species_common: str, x_admin_key: str = Header(None)):
+    """Hide all of one species' visits on one day (reversible)."""
+    if not is_owner(x_admin_key):
+        return owner_only()
+    bounds = _parse_local_day(date)
+    if bounds is None:
+        return JSONResponse({"status": "error", "message": "Invalid date format, expected YYYY-MM-DD"}, status_code=400)
+    ids = get_day_species_ids(species_common, *bounds)
+    return JSONResponse({"hidden": hide_detections(ids, "wrong bird")})
+
+
+@app.get("/api/hidden")
+async def hidden_list(x_admin_key: str = Header(None)):
+    if not is_owner(x_admin_key):
+        return owner_only()
+    return JSONResponse(get_hidden_detections())
+
+
+@app.post("/api/hidden/{detection_id}/restore")
+async def restore_hidden(detection_id: int, x_admin_key: str = Header(None)):
+    if not is_owner(x_admin_key):
+        return owner_only()
+    return JSONResponse({"restored": restore_detection(detection_id)})
+
+
 @app.delete("/api/detections/{detection_id}")
-async def delete_detection_endpoint(detection_id: int):
+async def delete_detection_endpoint(detection_id: int, x_admin_key: str = Header(None)):
     """
     Delete a detection (visit) by ID. If its audio clip was the retained
     daily-best clip for that species/day, retire that pointer too and delete
-    the file if nothing else still references it.
+    the file if nothing else still references it. Owner only: this site is public.
     """
+    if not is_owner(x_admin_key):
+        return owner_only()
     detection = get_detection_by_id(detection_id)
 
     if detection is None:

@@ -6,6 +6,7 @@ Uses Python's built-in sqlite3 module (no ORM).
 import sqlite3
 from datetime import datetime
 import bisect
+import time
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -50,6 +51,27 @@ def init_db():
         )
     """)
     
+    # Visits hidden as misidentifications: moved here whole (same id) so every
+    # query on detections ignores them, and restoring moves them back.
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS hidden_detections (
+            id INTEGER PRIMARY KEY,
+            species_common TEXT NOT NULL,
+            species_scientific TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            audio_filename TEXT NOT NULL,
+            first_detected_at TEXT NOT NULL,
+            last_detected_at TEXT NOT NULL,
+            detection_count INTEGER DEFAULT 1,
+            image_url TEXT,
+            wiki_summary TEXT,
+            first_detected_timestamp INTEGER,
+            last_detected_timestamp INTEGER,
+            hidden_at INTEGER NOT NULL,
+            hidden_reason TEXT
+        )
+    """)
+
     # Add timestamp columns if they don't exist (for existing databases)
     try:
         cursor.execute("ALTER TABLE detections ADD COLUMN first_detected_timestamp INTEGER")
@@ -235,6 +257,7 @@ def get_species_summary() -> List[Dict]:
     cursor.execute("""
         SELECT species_common, audio_filename, detection_date, MAX(confidence)
         FROM daily_best_clips
+        WHERE session_id NOT IN (SELECT id FROM hidden_detections)
         GROUP BY species_common
     """)
     best = {r[0]: (r[1], r[2]) for r in cursor.fetchall()}
@@ -350,6 +373,64 @@ def get_detection_by_id(detection_id: int) -> Optional[Dict]:
     if row:
         return dict(row)
     return None
+
+
+DETECTION_COLUMNS = ("id, species_common, species_scientific, confidence, audio_filename, "
+                     "first_detected_at, last_detected_at, detection_count, image_url, wiki_summary, "
+                     "first_detected_timestamp, last_detected_timestamp")
+
+
+def hide_detections(ids: List[int], reason: str) -> int:
+    """Move visits to hidden_detections. Returns how many were hidden."""
+    if not ids:
+        return 0
+    marks = ",".join("?" * len(ids))
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute(f"""
+                INSERT INTO hidden_detections ({DETECTION_COLUMNS}, hidden_at, hidden_reason)
+                SELECT {DETECTION_COLUMNS}, ?, ? FROM detections WHERE id IN ({marks})
+            """, (int(time.time()), reason, *ids))
+            return conn.execute(f"DELETE FROM detections WHERE id IN ({marks})", ids).rowcount
+    finally:
+        conn.close()
+
+
+def restore_detection(detection_id: int) -> bool:
+    """Move a hidden visit back into detections."""
+    conn = get_connection()
+    try:
+        with conn:
+            moved = conn.execute(f"""
+                INSERT INTO detections ({DETECTION_COLUMNS})
+                SELECT {DETECTION_COLUMNS} FROM hidden_detections WHERE id = ?
+            """, (detection_id,)).rowcount
+            conn.execute("DELETE FROM hidden_detections WHERE id = ?", (detection_id,))
+            return moved > 0
+    finally:
+        conn.close()
+
+
+def get_hidden_detections(limit: int = 100) -> List[Dict]:
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("""
+        SELECT id, species_common, confidence, detection_count, last_detected_timestamp, hidden_at, hidden_reason
+        FROM hidden_detections ORDER BY hidden_at DESC, last_detected_timestamp DESC LIMIT ?
+    """, (limit,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_day_species_ids(species_common: str, start_ts: int, end_ts: int) -> List[int]:
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT id FROM detections
+        WHERE species_common = ? AND last_detected_timestamp >= ? AND last_detected_timestamp < ?
+    """, (species_common, start_ts, end_ts)).fetchall()
+    conn.close()
+    return [r[0] for r in rows]
 
 
 def delete_detection(detection_id: int) -> bool:
@@ -714,7 +795,8 @@ def get_day_species_summary(detection_date: str, start_ts: int, end_ts: int) -> 
         row['returned_after_days'] = gap if returned else None
 
     cursor.execute("""
-        SELECT species_common, audio_filename FROM daily_best_clips WHERE detection_date = ?
+        SELECT species_common, audio_filename FROM daily_best_clips
+        WHERE detection_date = ? AND session_id NOT IN (SELECT id FROM hidden_detections)
     """, (detection_date,))
     audio_by_species = {row[0]: row[1] for row in cursor.fetchall()}
 

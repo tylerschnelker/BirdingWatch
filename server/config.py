@@ -3,6 +3,7 @@ Configuration for the BirdWatch desktop server.
 Loads values from .env file or uses defaults.
 """
 
+import json
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -31,6 +32,16 @@ BIRDNET_CONFIDENCE_THRESHOLD = float(os.getenv("BIRDNET_CONFIDENCE_THRESHOLD", "
 # Repeated calls in the same clip, or calls that extend an already-confirmed
 # session, only need to clear BIRDNET_CONFIDENCE_THRESHOLD.
 SINGLETON_CONFIDENCE_THRESHOLD = float(os.getenv("SINGLETON_CONFIDENCE_THRESHOLD", "0.85"))
+
+# Owner key for hiding/restoring/deleting visits from the browser (Settings >
+# unlock). Separate from API_KEY, which only the Pi holds. Unset = no editing.
+ADMIN_KEY = os.getenv("ADMIN_KEY")
+
+# Per-species rules for this yard (yard_rules.json next to this file)
+YARD_RULES = {
+    name: rule for name, rule in json.loads((Path(__file__).parent / "yard_rules.json").read_text()).items()
+    if not name.startswith("_")
+}
 
 # Location coordinates for BirdNET location filtering (optional)
 # Fill in your latitude and longitude for better accuracy

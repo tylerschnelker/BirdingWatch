@@ -343,6 +343,28 @@ is the shared sheet for Settings and the bird card.
 - **Name**: the header and title are "Mary's Backyard Birds" (the domain); the Home Screen label is
   "Mary's Birds".
 
+## Yard rules, owner editing, hidden visits (2026-11-11)
+
+- **Misidentifications** here are mostly household/construction noise matched to loud birds (the back
+  door as Great-tailed Grackle, machinery as Wild Turkey/Trumpeter Swan), nearly always as one call
+  in one clip. **Yard rules** (`server/yard_rules.json`, loaded into `config.YARD_RULES`): `block`
+  never logs a species; `min_calls` makes a new visit need that many calls in one clip (an active
+  visit still extends normally). Applied in `/upload-audio` before the singleton check. Hawks are
+  deliberately not touched: the user chose to trust BirdNET over guessing at Blue Jay mimicry.
+- **Owner key**: `ADMIN_KEY` in `.env` (added 2026-11-11, so `.env` is no longer byte-identical to the
+  droplet's). Required (header `X-Admin-Key`, constant-time compare) for `DELETE /api/detections/{id}`
+  (which was open to anyone before), `POST /api/detections/{id}/hide`,
+  `POST /api/days/{date}/species/{name}/hide`, `GET /api/hidden`, `POST /api/hidden/{id}/restore`,
+  `GET /api/owner/check`. A browser is unlocked by opening `/#owner=<key>` once (fragment, never sent to
+  the server or Cloudflare; stored in localStorage, removed from the address bar). Unlocked devices see
+  "Wrong bird?" on a card, "Hide" per visit, and Settings > Editing (hidden list with Restore, lock).
+  Rotate by changing `ADMIN_KEY` and recreating the container; every device then needs a new link.
+- **Hiding moves rows** from `detections` to `hidden_detections` (same id; ids are AUTOINCREMENT so never
+  reused), so no query needs a filter; restoring moves them back. Clips whose `daily_best_clips.session_id`
+  is hidden aren't offered for playback. Nothing is deleted.
+- **Backlog cleanup (2026-11-11)**: past visits matching the yard rules were hidden with reason
+  "yard rules cleanup" (all swan/teal/turkey/eagle visits, one-call grackle visits).
+
 ## Config / environment
 
 - `.env.example` documents all keys. `LAT`/`LON` are set to real Colorado coordinates.

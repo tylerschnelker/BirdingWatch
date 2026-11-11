@@ -1,0 +1,8 @@
+{
+    "_about": "Birds that need more proof before they count in this yard. block: never logged. min_calls: a new visit needs this many calls in one clip (an ongoing visit still extends normally). See CLAUDE.md, 'Yard rules'.",
+    "Trumpeter Swan": {"block": true, "why": "single honks from machinery and doors; not a backyard bird"},
+    "Green-winged Teal": {"block": true, "why": "a pond duck; one-call matches on household noise"},
+    "Wild Turkey": {"block": true, "why": "matched construction noise"},
+    "Great-tailed Grackle": {"min_calls": 2, "why": "the back door's creak"},
+    "Bald Eagle": {"min_calls": 2, "why": "one-call matches alongside a hawk scream"}
+}
